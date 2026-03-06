@@ -12,13 +12,13 @@ Last updated: 2026-03-06
 | 3 | Integration | ✅ Complete |
 | 4 | Testing / QA | ✅ Complete |
 | 5 | Staging | ✅ Complete |
-| 6 | Build & Packaging | ✗ Not started |
+| 6 | Build & Packaging | ✅ Complete |
 | 7 | Code Signing & Security Audit | ✗ Not started |
 | 8 | Distribution / Release | ✗ Not started |
 | 9 | Client Installation & Validation | ✗ Not started |
 | 10 | Production & Maintenance | ✗ Not started |
 
-**Current position: Stage 6 (Build & Packaging) — Stages 0–5 complete**
+**Current position: Stage 7 (Code Signing & Security Audit) — Stages 0–6 complete**
 
 ---
 
@@ -127,19 +127,17 @@ All modules implemented and running on `localhost:8001`.
 
 ---
 
-## Stage 6 — Build & Packaging ✗
+## Stage 6 — Build & Packaging ✅
 
-- [ ] **Dockerfile** — multi-stage build (builder + runtime), non-root user, no dev dependencies in image
-- [ ] **CI/CD pipeline** — GitHub Actions (or equivalent): lint → test → build image → push to registry
-- [ ] **Semantic versioning** — `pyproject.toml` or `setup.cfg`, git tags, `CHANGELOG.md`
-- [ ] **Image signing** — sign container image with cosign or Docker Content Trust
-- [ ] **Dependency lockfile** — `pip-compile` or `uv lock` to pin transitive dependencies
+- [x] **`Dockerfile`** — multi-stage build (builder + runtime), non-root `ritapi` user, no dev tools in runtime layer *(done in Stage 5)*
+- [x] **`.github/workflows/ci.yml`** — lint (ruff + bandit) → test matrix (Python 3.11 + 3.12, Redis service) → build multi-arch image (amd64 + arm64) → cosign sign → push to GHCR
+- [x] **`pyproject.toml`** — PEP 517 build, version `1.0.0`, ruff lint config, coverage threshold (`fail_under = 70`)
+- [x] **`CHANGELOG.md`** — Keep-a-Changelog format, full 1.0.0 release notes
+- [x] **`requirements.lock`** — fully pinned transitive dependencies via `pip-compile --strip-extras`
 
 ---
 
 ## Stage 7 — Code Signing & Security Audit ✗
-
-Blocked by: Stage 6 completion.
 
 - [ ] **SAST scan** — `bandit` (Python security linter) and `semgrep` with OWASP ruleset across all source files
 - [ ] **Dependency audit** — `pip audit` or `safety check` for known CVEs in `requirements.txt`
