@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ritapi-advanced.fullname" . }}
+  labels:
+    {{- include "ritapi-advanced.labels" . | nindent 4 }}
+data:
+  JWT_ALGORITHM: {{ .Values.config.jwtAlgorithm | quote }}
+  JWT_EXPIRE_MINUTES: {{ .Values.config.jwtExpireMinutes | quote }}
+  RATE_LIMIT_REQUESTS: {{ .Values.config.rateLimitRequests | quote }}
+  RATE_LIMIT_WINDOW: {{ .Values.config.rateLimitWindow | quote }}
+  LOG_PATH: {{ .Values.config.logPath | quote }}
+  YARA_RULES_DIR: {{ .Values.config.yaraRulesDir | quote }}
+  BOT_DETECTION_BYPASS_IPS: {{ .Values.config.botDetectionBypassIps | quote }}
+  ENV: {{ .Values.config.env | quote }}
+  REDIS_URL: {{ include "ritapi-advanced.redisUrl" . | quote }}

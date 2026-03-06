@@ -1,0 +1,167 @@
+# values.yaml — Default values for ritapi-advanced Helm chart.
+# Override with: helm install ritapi-advanced ./helm/ritapi-advanced -f my-values.yaml
+
+replicaCount: 2
+
+image:
+  repository: ghcr.io/vadhh/ritapi-advance
+  pullPolicy: IfNotPresent
+  tag: ""  # Defaults to Chart.appVersion
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# ---------------------------------------------------------------------------
+# Application configuration
+# ---------------------------------------------------------------------------
+config:
+  jwtAlgorithm: HS256
+  jwtExpireMinutes: "60"
+  rateLimitRequests: "100"
+  rateLimitWindow: "60"
+  logPath: /var/log/ritapi/ritapi_advanced.jsonl
+  yaraRulesDir: /app/rules
+  # Comma-separated IPs exempt from bot detection (add monitoring IPs here)
+  botDetectionBypassIps: "127.0.0.1,::1"
+  env: production
+
+# ---------------------------------------------------------------------------
+# Secrets — provide via --set or an external secrets manager.
+# NEVER commit real values here.
+# ---------------------------------------------------------------------------
+secrets:
+  # Required — generate with: python -c "import secrets; print(secrets.token_hex(32))"
+  secretKey: ""
+  adminSecret: ""
+  redisPassword: ""
+
+# ---------------------------------------------------------------------------
+# Redis — toggle between bundled (subchart) and external
+# ---------------------------------------------------------------------------
+redis:
+  # Set to true to deploy a Redis instance alongside the app (dev/staging).
+  # Set to false and provide externalUrl for production.
+  bundled: true
+  externalUrl: ""  # e.g. "redis://:password@my-redis:6379/1"
+  image:
+    repository: redis
+    tag: "7-alpine"
+  persistence:
+    enabled: true
+    size: 1Gi
+
+# ---------------------------------------------------------------------------
+# Service
+# ---------------------------------------------------------------------------
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8001
+
+# ---------------------------------------------------------------------------
+# Ingress
+# ---------------------------------------------------------------------------
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+    # nginx.ingress.kubernetes.io/proxy-body-size: "2m"
+  hosts:
+    - host: ritapi.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: ritapi-tls
+      hosts:
+        - ritapi.example.com
+
+# ---------------------------------------------------------------------------
+# Autoscaling
+# ---------------------------------------------------------------------------
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# ---------------------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------------------
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# ---------------------------------------------------------------------------
+# Health checks
+# ---------------------------------------------------------------------------
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 8001
+  initialDelaySeconds: 10
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: 8001
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 2
+
+# ---------------------------------------------------------------------------
+# Pod settings
+# ---------------------------------------------------------------------------
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/path: /metrics
+  prometheus.io/port: "8001"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
+
+nodeSelector: {}
+tolerations: []
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - ritapi-advanced
+          topologyKey: kubernetes.io/hostname
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Log volume (emptyDir by default; use PVC in production)
+logVolume:
+  emptyDir: {}
+  # persistentVolumeClaim:
+  #   claimName: ritapi-logs

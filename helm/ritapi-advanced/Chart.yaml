@@ -1,0 +1,17 @@
+apiVersion: v2
+name: ritapi-advanced
+description: Layer-7 API protection service — WAF, rate limiting, bot detection, injection/exfiltration detection, JWT/API-key auth, RBAC
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - waf
+  - api-security
+  - rate-limiting
+  - bot-detection
+  - fastapi
+home: https://github.com/vadhh/ritapi-advance
+sources:
+  - https://github.com/vadhh/ritapi-advance
+maintainers:
+  - name: vadhh

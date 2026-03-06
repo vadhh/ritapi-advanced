@@ -1,6 +1,6 @@
 # TODO.md — RitAPI Advanced
 
-Last updated: 2026-03-06
+Last updated: 2026-03-07
 
 ## Stage Model
 
@@ -14,11 +14,11 @@ Last updated: 2026-03-06
 | 5 | Staging | ✅ Complete |
 | 6 | Build & Packaging | ✅ Complete |
 | 7 | Code Signing & Security Audit | ✅ Complete |
-| 8 | Distribution / Release | ✗ Not started |
+| 8 | Distribution / Release | ✅ Complete |
 | 9 | Client Installation & Validation | ✗ Not started |
 | 10 | Production & Maintenance | ✗ Not started |
 
-**Current position: Stage 8 (Distribution / Release) — Stages 0–7 complete**
+**Current position: Stage 9 (Client Installation & Validation) — Stages 0–8 complete**
 
 ---
 
@@ -149,20 +149,16 @@ All modules implemented and running on `localhost:8001`.
 
 ---
 
-## Stage 8 — Distribution / Release ✗
+## Stage 8 — Distribution / Release ✅
 
-Blocked by: Stage 7 completion.
-
-- [ ] **Release notes / CHANGELOG.md** — per-version feature and security fix log
-- [ ] **Container registry push** — publish signed image to registry (GHCR, Docker Hub, or private)
-- [ ] **Helm chart or Kubernetes manifests** — for orchestrated deployments
-- [ ] **PyPI package** (optional) — if distributing as a library rather than a service
+- [x] **Release notes / CHANGELOG.md** — Keep-a-Changelog format, full 1.0.0 release notes *(done Stage 6)*
+- [x] **Container registry push** — CI `build` job pushes multi-arch signed image to GHCR *(done Stage 6)*
+- [x] **Helm chart** — `helm/ritapi-advanced/` with full template suite: Deployment, Service, Ingress, HPA, bundled Redis, ConfigMap, Secret, ServiceAccount; `values.yaml` covers all tunables; `_helpers.tpl` provides `redisUrl` helper for bundled vs. external Redis
+- [x] **Git tag v1.0.0** — semantic version tag; CI triggers GHCR release on push
 
 ---
 
 ## Stage 9 — Client Installation & Validation ✗
-
-Blocked by: Stage 8 completion.
 
 - [ ] **Installation guide** — step-by-step for bare-metal, Docker, and Kubernetes deployment
 - [ ] **Post-install validation script** — `scripts/validate_install.sh` that verifies Redis, TLS, auth, and `/healthz`
