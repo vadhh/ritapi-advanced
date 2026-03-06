@@ -1,0 +1,225 @@
+# Grafana alert rule provisioning — RitAPI Advanced
+# Place this file in the Grafana provisioning/alerting/ directory.
+# Grafana 9+ unified alerting format.
+#
+# To use: mount this file into the Grafana container at
+#   /etc/grafana/provisioning/alerting/ritapi-alerts.yaml
+
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: RitAPI Advanced
+    folder: RitAPI
+    interval: 1m
+    rules:
+
+      - uid: ritapi-down
+        title: RitAPI Service Down
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: up{job="ritapi-advanced"}
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              conditions:
+                - evaluator:
+                    params: [1]
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+              refId: C
+              type: classic_conditions
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: RitAPI Advanced is unreachable
+          description: "Instance {{ $labels.instance }} has been down for > 1 minute."
+          runbook_url: "https://github.com/vadhh/ritapi-advance/blob/main/RUNBOOK.md"
+
+      - uid: ritapi-redis-down
+        title: RitAPI Redis Disconnected
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: ritapi_redis_connected
+              refId: A
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              conditions:
+                - evaluator:
+                    params: [1]
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+              refId: C
+              type: classic_conditions
+        noDataState: NoData
+        execErrState: Error
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: RitAPI Redis connection lost
+          description: "Service running in fail-open mode — protection degraded."
+          runbook_url: "https://github.com/vadhh/ritapi-advance/blob/main/RUNBOOK.md#redis-failover"
+
+      - uid: ritapi-auth-spike
+        title: RitAPI Auth Failure Spike
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: rate(ritapi_auth_failures_total[5m])
+              refId: A
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              conditions:
+                - evaluator:
+                    params: [5]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+              refId: C
+              type: classic_conditions
+        noDataState: OK
+        execErrState: Error
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: Auth failure rate >5/s
+          description: "Possible credential stuffing. Check reason label breakdown."
+          runbook_url: "https://github.com/vadhh/ritapi-advance/blob/main/RUNBOOK.md#rate-limit-tuning"
+
+      - uid: ritapi-rate-limit-surge
+        title: RitAPI Rate Limit Surge
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: rate(ritapi_rate_limit_hits_total[5m])
+              refId: A
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              conditions:
+                - evaluator:
+                    params: [10]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+              refId: C
+              type: classic_conditions
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High 429 rate (>10/s for 5 min)
+          description: "Automated traffic or threshold too tight. See RUNBOOK.md."
+          runbook_url: "https://github.com/vadhh/ritapi-advance/blob/main/RUNBOOK.md#rate-limit-tuning"
+
+      - uid: ritapi-high-latency
+        title: RitAPI High p99 Latency
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: >
+                histogram_quantile(0.99,
+                  rate(ritapi_request_duration_seconds_bucket[5m]))
+              refId: A
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              conditions:
+                - evaluator:
+                    params: [1.0]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+              refId: C
+              type: classic_conditions
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: p99 latency > 1s
+          description: "Check Redis latency and middleware CPU usage."
+
+contactPoints:
+  - orgId: 1
+    name: default
+    receivers:
+      - uid: ritapi-email
+        type: email
+        settings:
+          addresses: ops@example.com
+          singleEmail: false
+
+policies:
+  - orgId: 1
+    receiver: default
+    group_by: [alertname, severity]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
+    routes:
+      - receiver: default
+        matchers:
+          - severity =~ "critical|warning"

@@ -1,6 +1,6 @@
 # TODO.md — RitAPI Advanced
 
-Last updated: 2026-03-07 (Stage 9)
+Last updated: 2026-03-07 (Stage 10 — COMPLETE)
 
 ## Stage Model
 
@@ -16,9 +16,9 @@ Last updated: 2026-03-07 (Stage 9)
 | 7 | Code Signing & Security Audit | ✅ Complete |
 | 8 | Distribution / Release | ✅ Complete |
 | 9 | Client Installation & Validation | ✅ Complete |
-| 10 | Production & Maintenance | ✗ Not started |
+| 10 | Production & Maintenance | ✅ Complete |
 
-**Current position: Stage 10 (Production & Maintenance) — Stages 0–9 complete**
+**ALL STAGES COMPLETE (0–10) — Service is production-ready.**
 
 ---
 
@@ -167,14 +167,13 @@ All modules implemented and running on `localhost:8001`.
 
 ---
 
-## Stage 10 — Production & Maintenance ✗
+## Stage 10 — Production & Maintenance ✅
 
-- [ ] **Grafana alert rules** — alert on: auth failure spike, rate limit hit rate > 10%, bot block surge, Redis down
-- [ ] **Runbook** — on-call procedures for Redis failover, cert renewal, YARA rule update, rate limit tuning
-- [ ] **Log rotation** — configure `logrotate` for `LOG_PATH` JSONL file
-- [ ] **SLOs defined** — uptime target, p99 latency budget, false-positive rate threshold for WAF
-- [ ] **YARA rule update process** — documented workflow for adding/testing/deploying new `.yar` files without downtime
-- [ ] **API key rotation policy** — documented schedule (e.g., 90-day TTL default, automated reminder)
+- [x] **`docker/prometheus/alerts.yaml`** — 12 Prometheus alerting rules covering: service down, Redis disconnected, high error rate, auth failure spike (warning + critical thresholds), rate limit surge, bot block surge, WAF injection surge, exfiltration trigger, p99 latency SLO breach, large response anomaly, no active API keys
+- [x] **`docker/grafana/alerts-provisioning.yaml`** — Grafana unified alerting provisioning (5 alert rules, contact point, routing policy); mount into `/etc/grafana/provisioning/alerting/`
+- [x] **`RUNBOOK.md`** — 9-section on-call runbook: service restart (all targets), Redis failover + emergency key flush, TLS renewal (certbot + self-signed), YARA rule update workflow (write → test → stage → rolling deploy), rate limit tuning, WAF false-positive investigation, API key rotation policy (TTL by role, rotate endpoint, emergency revocation, expiry reminder script), log management, escalation path with SLAs
+- [x] **`scripts/logrotate.conf`** — daily rotation, 90-day retention, gzip + delaycompress, `postrotate` systemd reload; install to `/etc/logrotate.d/ritapi-advanced`
+- [x] **`SLO.md`** — 4 SLOs defined: 99.5% availability (3h39m/month error budget), p99 < 200 ms latency, WAF false-positive rate ≤ 0.1%, auth overhead < 5 ms; error budget burn-rate policy; quarterly review process
 
 ---
 

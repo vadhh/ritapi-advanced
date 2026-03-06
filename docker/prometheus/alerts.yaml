@@ -1,0 +1,202 @@
+groups:
+  - name: ritapi_advanced
+    interval: 30s
+    rules:
+
+      # -----------------------------------------------------------------------
+      # Service availability
+      # -----------------------------------------------------------------------
+      - alert: RitAPIDown
+        expr: up{job="ritapi-advanced"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "RitAPI Advanced is down"
+          description: >
+            The RitAPI Advanced instance {{ $labels.instance }} has been
+            unreachable for more than 1 minute. Check the process and Redis
+            connection. Runbook: RUNBOOK.md § Redis Failover / Service Restart.
+
+      - alert: RitAPIRedisDisconnected
+        expr: ritapi_redis_connected == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "RitAPI Advanced lost Redis connection"
+          description: >
+            Redis connection has been down for > 2 minutes on {{ $labels.instance }}.
+            The service is running in fail-open mode — protection is degraded.
+            Runbook: RUNBOOK.md § Redis Failover.
+
+      - alert: RitAPIHighErrorRate
+        expr: >
+          rate(ritapi_requests_total{action="block"}[5m])
+          / on() rate(ritapi_requests_total[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "RitAPI blocking >50% of traffic"
+          description: >
+            More than 50% of requests are being blocked on {{ $labels.instance }}.
+            May indicate a misconfigured rule or an active attack. Review logs
+            and PENTEST.md for known false-positive vectors.
+
+      # -----------------------------------------------------------------------
+      # Authentication
+      # -----------------------------------------------------------------------
+      - alert: RitAPIAuthFailureSpike
+        expr: >
+          rate(ritapi_auth_failures_total[5m]) > 5
+        for: 3m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "Auth failure rate spike on RitAPI"
+          description: >
+            Auth failures on {{ $labels.instance }} are exceeding 5/s averaged
+            over 5 minutes. Possible credential stuffing or misconfigured client.
+            Reason breakdown: reason="{{ $labels.reason }}".
+
+      - alert: RitAPIAuthFailureCritical
+        expr: >
+          rate(ritapi_auth_failures_total[5m]) > 20
+        for: 2m
+        labels:
+          severity: critical
+          team: security
+        annotations:
+          summary: "Critical auth failure rate on RitAPI"
+          description: >
+            Auth failure rate exceeds 20/s on {{ $labels.instance }}.
+            Likely an active credential-stuffing or brute-force attack.
+            Consider rate-tightening RATE_LIMIT_REQUESTS or IP blocking at
+            the network edge. Runbook: RUNBOOK.md § Rate Limit Tuning.
+
+      # -----------------------------------------------------------------------
+      # Rate limiting
+      # -----------------------------------------------------------------------
+      - alert: RitAPIRateLimitSurge
+        expr: >
+          rate(ritapi_rate_limit_hits_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High rate-limit 429 rate on RitAPI"
+          description: >
+            More than 10 rate-limit rejections per second on {{ $labels.instance }}
+            sustained for 5 minutes. Either legitimate traffic growth requires
+            threshold adjustment, or an automated attacker is hitting the service.
+            Runbook: RUNBOOK.md § Rate Limit Tuning.
+
+      # -----------------------------------------------------------------------
+      # Bot detection
+      # -----------------------------------------------------------------------
+      - alert: RitAPIBotBlockSurge
+        expr: >
+          rate(ritapi_bot_blocks_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "Bot block surge on RitAPI"
+          description: >
+            Bot detection is blocking >5 requests/s over 5 minutes on
+            {{ $labels.instance }} (rule: {{ $labels.rule }}).
+            May indicate an active bot campaign or scanner sweep.
+
+      # -----------------------------------------------------------------------
+      # Injection / WAF
+      # -----------------------------------------------------------------------
+      - alert: RitAPIInjectionSurge
+        expr: >
+          rate(ritapi_injections_total[5m]) > 3
+        for: 3m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "WAF injection block surge on RitAPI"
+          description: >
+            Injection detection ({{ $labels.detection_type }}) blocking
+            >3 req/s on {{ $labels.instance }}. May be an active SQL injection
+            or XSS probe. Review access logs. Runbook: RUNBOOK.md § WAF Tuning.
+
+      # -----------------------------------------------------------------------
+      # Exfiltration
+      # -----------------------------------------------------------------------
+      - alert: RitAPIExfiltrationBlock
+        expr: >
+          rate(ritapi_exfil_blocks_total[10m]) > 1
+        for: 5m
+        labels:
+          severity: critical
+          team: security
+        annotations:
+          summary: "Exfiltration detection triggered on RitAPI"
+          description: >
+            Exfiltration heuristic {{ $labels.heuristic }} is firing
+            consistently on {{ $labels.instance }}. A client may be
+            bulk-reading data or a large response anomaly is present.
+            Review JSONL logs immediately.
+
+      # -----------------------------------------------------------------------
+      # Performance
+      # -----------------------------------------------------------------------
+      - alert: RitAPIHighLatency
+        expr: >
+          histogram_quantile(0.99,
+            rate(ritapi_request_duration_seconds_bucket[5m])
+          ) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "RitAPI p99 latency >1s"
+          description: >
+            p99 response latency on {{ $labels.instance }} has exceeded 1 second
+            for 5 minutes. May indicate Redis slowness or middleware regex
+            complexity under load. Check Redis latency and CPU.
+
+      - alert: RitAPILargeResponseAnomaly
+        expr: >
+          histogram_quantile(0.95,
+            rate(ritapi_response_size_bytes_bucket[10m])
+          ) > 1048576
+        for: 10m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "RitAPI p95 response size >1 MB"
+          description: >
+            95th-percentile outbound response size on {{ $labels.instance }}
+            has exceeded 1 MB for 10 minutes. May signal data exfiltration
+            or misconfigured upstream. Review exfiltration logs.
+
+      # -----------------------------------------------------------------------
+      # API key inventory
+      # -----------------------------------------------------------------------
+      - alert: RitAPINoActiveAPIKeys
+        expr: ritapi_active_api_keys == 0
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "No active API keys registered in RitAPI"
+          description: >
+            The active API key gauge on {{ $labels.instance }} has been zero
+            for 5 minutes. This may be expected in JWT-only deployments, but
+            could indicate key expiry or Redis data loss. Verify with
+            GET /admin/apikey (requires SUPER_ADMIN JWT).
