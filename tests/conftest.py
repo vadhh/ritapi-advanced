@@ -96,8 +96,11 @@ def super_admin_headers(super_admin_token):
 
 @pytest.fixture(scope="session")
 def admin_secret_headers():
+    # Read the actual env var so this fixture matches _ADMIN_SECRET in admin.py
+    # regardless of whether the value came from conftest setdefault or CI env.
+    secret = os.environ.get("ADMIN_SECRET", "test-admin-secret")
     return {
-        "X-Admin-Secret": "test-admin-secret",
+        "X-Admin-Secret": secret,
         "User-Agent": "pytest-test-client/1.0",
         "Content-Type": "application/json",
     }
