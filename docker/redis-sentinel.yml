@@ -1,0 +1,122 @@
+# docker/redis-sentinel.yml
+# Redis HA: 1 primary, 2 replicas, 3 sentinels.
+#
+# Sentinel quorum = 2 (majority of 3). A new primary is elected automatically
+# when the existing primary is unreachable for > 5 seconds.
+#
+# Ports exposed to host:
+#   6379  — primary
+#   6380  — replica-1
+#   6381  — replica-2
+#   26379 — sentinel-1
+#   26380 — sentinel-2
+#   26381 — sentinel-3
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Primary
+  # ---------------------------------------------------------------------------
+  redis-primary:
+    image: redis:7-alpine
+    container_name: ritapi-redis-primary
+    command: >
+      redis-server
+      --port 6379
+      --save 60 1
+      --loglevel warning
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - ritapi-redis
+
+  # ---------------------------------------------------------------------------
+  # Replicas
+  # ---------------------------------------------------------------------------
+  redis-replica-1:
+    image: redis:7-alpine
+    container_name: ritapi-redis-replica-1
+    command: >
+      redis-server
+      --port 6380
+      --replicaof redis-primary 6379
+      --replica-read-only yes
+      --loglevel warning
+    ports:
+      - "6380:6380"
+    depends_on:
+      redis-primary:
+        condition: service_healthy
+    networks:
+      - ritapi-redis
+
+  redis-replica-2:
+    image: redis:7-alpine
+    container_name: ritapi-redis-replica-2
+    command: >
+      redis-server
+      --port 6381
+      --replicaof redis-primary 6379
+      --replica-read-only yes
+      --loglevel warning
+    ports:
+      - "6381:6381"
+    depends_on:
+      redis-primary:
+        condition: service_healthy
+    networks:
+      - ritapi-redis
+
+  # ---------------------------------------------------------------------------
+  # Sentinels
+  # ---------------------------------------------------------------------------
+  sentinel-1:
+    image: redis:7-alpine
+    container_name: ritapi-sentinel-1
+    command: >
+      redis-sentinel /etc/redis/sentinel.conf
+    volumes:
+      - ./sentinel.conf:/etc/redis/sentinel.conf:ro
+    ports:
+      - "26379:26379"
+    depends_on:
+      - redis-primary
+    networks:
+      - ritapi-redis
+
+  sentinel-2:
+    image: redis:7-alpine
+    container_name: ritapi-sentinel-2
+    command: >
+      redis-sentinel /etc/redis/sentinel.conf
+    volumes:
+      - ./sentinel.conf:/etc/redis/sentinel.conf:ro
+    ports:
+      - "26380:26379"
+    depends_on:
+      - redis-primary
+    networks:
+      - ritapi-redis
+
+  sentinel-3:
+    image: redis:7-alpine
+    container_name: ritapi-sentinel-3
+    command: >
+      redis-sentinel /etc/redis/sentinel.conf
+    volumes:
+      - ./sentinel.conf:/etc/redis/sentinel.conf:ro
+    ports:
+      - "26381:26379"
+    depends_on:
+      - redis-primary
+    networks:
+      - ritapi-redis
+
+networks:
+  ritapi-redis:
+    driver: bridge

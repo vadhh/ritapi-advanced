@@ -1,0 +1,209 @@
+# TODO.md — RitAPI Advanced
+
+Last updated: 2026-03-06
+
+## Stage Model
+
+| Stage | Name | Status |
+|-------|------|--------|
+| 0 | Concept / Requirements | ✅ Complete |
+| 1 | Design | ✅ Complete |
+| 2 | Development (Local) | ✅ Complete |
+| 3 | Integration | ✅ Complete |
+| 4 | Testing / QA | ✅ Complete |
+| 5 | Staging | ✅ Complete |
+| 6 | Build & Packaging | ✗ Not started |
+| 7 | Code Signing & Security Audit | ✗ Not started |
+| 8 | Distribution / Release | ✗ Not started |
+| 9 | Client Installation & Validation | ✗ Not started |
+| 10 | Production & Maintenance | ✗ Not started |
+
+**Current position: Stage 6 (Build & Packaging) — Stages 0–5 complete**
+
+---
+
+## Stage 0 — Concept / Requirements ✅
+
+- [x] PRD defined: 10 protection features (rate limit, WAF, bot detection, exfiltration, JWT, API key, RBAC, YARA, Prometheus, dashboard)
+- [x] Archive audit completed across `ritapi-advanced`, `ritapi-v-sentinel`, `_archive/ritapi_v`, `minifw-ai-standalone`
+- [x] Regressions identified and tracked
+
+---
+
+## Stage 1 — Design ✅
+
+- [x] Middleware stack order defined (RateLimit → Auth → Bot → WAF → Exfil → DecisionEngine)
+- [x] Redis key schema designed (rate, bot, exfil, apikey namespaces)
+- [x] Auth model: JWT (Bearer) + API key (SHA-256/Redis), RBAC IntEnum hierarchy
+- [x] JSONL log schema defined
+- [x] Prometheus metric taxonomy defined
+- [x] `CLAUDE.md` documents architecture
+
+---
+
+## Stage 2 — Development (Local) ✅
+
+All modules implemented and running on `localhost:8001`.
+
+**Foundation**
+- [x] `app/utils/redis_client.py` — singleton with reconnect cooldown, per-op retry (ExponentialBackoff), Sentinel HA support, `mark_failed()` propagation
+- [x] `app/utils/logging.py` — JSONL structured logger, auto-creates dirs, stderr fallback
+- [x] `app/utils/metrics.py` — 7 counters, 2 histograms, 2 gauges; `GET /metrics`
+- [x] `app/utils/yara_scanner.py` — scanner singleton, 2 MB cap, graceful no-op
+
+**Auth & RBAC**
+- [x] `app/auth/jwt_handler.py` — `create_access_token` / `verify_token` / `require_jwt`
+- [x] `app/auth/api_key_handler.py` — issue (with TTL) / validate / revoke / rotate; SHA-256 Redis storage
+- [x] `app/rbac/rbac_service.py` — 5-level IntEnum, `require_role()` factory
+
+**Middleware stack**
+- [x] `app/middlewares/rate_limit.py` — per-IP + per-API-key, 429, Prometheus
+- [x] `app/middlewares/auth.py` — JWT/API-key enforcement, bypass list, `request.state.claims`
+- [x] `app/middlewares/bot_detection.py` — 13 rules, risk accumulator, bypass IPs
+- [x] `app/middlewares/injection_detection.py` — 96 regex patterns (XSS/SQLi/CMDi/traversal/LDAP/scanner-UA), YARA hook
+- [x] `app/middlewares/exfiltration_detection.py` — 4 heuristics (large response, high volume, bulk access, sequential crawl)
+- [x] `app/middlewares/decision_engine.py` — unified block gate (innermost)
+
+**Routes & UI**
+- [x] `app/web/admin.py` — `POST /admin/token`, `POST /admin/apikey`, `POST /admin/apikey/rotate`, `DELETE /admin/apikey`
+- [x] `app/web/dashboard.py` — live UI + `/events` / `/stats` / `/status` APIs, auth guard
+- [x] `app/schemas/payload_schema.py` — `BasePayload`, NFC normalisation, Content-Type dep
+
+**YARA rules**
+- [x] `rules/sqli.yar` — 6 rules (UNION SELECT, stacked, boolean blind, time-based, error-based, info_schema)
+- [x] `rules/xss.yar` — 5 rules (script tags, event handlers, javascript: protocol, polyglots, dangerous tags)
+- [x] `rules/shell_injection.yar` — 5 rules (chaining, file read, remote exec, env vars, reverse shells)
+- [x] `rules/credential_stuffing.yar` — 4 rules (bulk creds, tool signatures, JSON array auth, common passwords)
+
+**Infrastructure**
+- [x] `nginx.conf` — HTTPS, TLSv1.2/1.3, hardened ciphers, X-Forwarded-For, limit_req_zone, /metrics restricted
+- [x] `scripts/gen_cert.sh` — self-signed (dev) + Let's Encrypt/Certbot (production)
+- [x] `docker/redis-standalone.yml` — single Redis for dev
+- [x] `docker/redis-sentinel.yml` + `docker/sentinel.conf` — 1 primary + 2 replicas + 3 sentinels, quorum=2
+- [x] `scripts/redis_sentinel_setup.sh` — start/stop/status
+
+---
+
+## Stage 3 — Integration ✅
+
+- [x] All middlewares wired in `app/main.py` in correct execution order
+- [x] Auth middleware integrated with RBAC (claims on `request.state`)
+- [x] `mark_failed()` propagated from all middleware Redis error handlers
+- [x] Prometheus metrics wired into all middlewares
+- [x] Admin router integrated with RBAC and auth bypass
+- [x] Dashboard router integrated with optional auth guard
+- [x] `/metrics` endpoint refreshes gauges from Redis on each scrape
+
+---
+
+## Stage 4 — Testing / QA ✅
+
+**162/162 tests passing** (`python -m pytest tests/ -q`)
+
+- [x] `test_health.py` — bypass endpoints
+- [x] `test_auth.py` — 401 enforcement, JWT, API key lifecycle
+- [x] `test_waf.py` — XSS, SQLi, CMDi, path traversal, scanner UA, nested JSON, clean passthrough
+- [x] `test_rate_limit.py` — 429 triggering, API key rate limit, response format
+- [x] `test_admin.py` — token issuance, API key CRUD, rotation, RBAC enforcement
+- [x] `test_bot_detection.py` — all 13 rules unit tested + middleware integration tests
+- [x] `test_exfiltration.py` — BULK_ACCESS, SEQUENTIAL_CRAWL, Redis helpers unit tested
+- [x] `test_yara.py` — SQLi, XSS, shell injection, credential stuffing rule verification (20 rules)
+- [x] `test_rbac.py` — role hierarchy enforcement, VIEWER blocked from ADMIN routes
+- [x] `test_edge_cases.py` — oversized body (413), malformed JSON, non-UTF-8, long URLs, unicode bypass
+- [x] `test_redis_failover.py` — fail-open behaviour, reconnect cooldown, JWT works without Redis
+- [x] `locustfile.py` — load/stress test (LegitimateUser 70%, AttackerUser 20%, CrawlerBot 10%)
+- [x] `pytest.ini` — `testpaths = tests`, coverage flags documented
+- [x] `requirements.txt` — `pytest-cov>=5.0.0` added
+
+---
+
+## Stage 5 — Staging ✅
+
+- [x] **`Dockerfile`** — multi-stage build (builder + runtime), non-root user `ritapi`, yara-python compiled against `libyara-dev`
+- [x] **`docker/app.yml`** — full-stack Compose: `app` + `redis` + `nginx`; internal/external network split; named volumes for logs, Redis data, certs
+- [x] **`.env.staging`** — staging template with documented secret placeholders (`SECRET_KEY`, `ADMIN_SECRET`, `REDIS_PASSWORD`); all env vars explained
+- [x] **`scripts/smoke_test.sh`** — validates bypass endpoints, dashboard, auth enforcement, WAF blocking, rate limiter; exits non-zero on failure (CI-gate ready)
+- [x] **`docker/grafana/dashboard.json`** — Grafana dashboard: request rate, bot/injection/exfil/auth counters by label, threat score heatmap, response size percentiles
+
+---
+
+## Stage 6 — Build & Packaging ✗
+
+- [ ] **Dockerfile** — multi-stage build (builder + runtime), non-root user, no dev dependencies in image
+- [ ] **CI/CD pipeline** — GitHub Actions (or equivalent): lint → test → build image → push to registry
+- [ ] **Semantic versioning** — `pyproject.toml` or `setup.cfg`, git tags, `CHANGELOG.md`
+- [ ] **Image signing** — sign container image with cosign or Docker Content Trust
+- [ ] **Dependency lockfile** — `pip-compile` or `uv lock` to pin transitive dependencies
+
+---
+
+## Stage 7 — Code Signing & Security Audit ✗
+
+Blocked by: Stage 6 completion.
+
+- [ ] **SAST scan** — `bandit` (Python security linter) and `semgrep` with OWASP ruleset across all source files
+- [ ] **Dependency audit** — `pip audit` or `safety check` for known CVEs in `requirements.txt`
+- [ ] **SBOM** — generate Software Bill of Materials (`cyclonedx-py` or `syft`)
+- [ ] **Secret scanning** — verify no secrets committed; configure `gitleaks` or `trufflesecurity` in CI
+- [ ] **Penetration test** — manual or tooled attack simulation against a running staging instance; document findings
+- [ ] **WAF bypass review** — review regex patterns for known bypass techniques (Unicode normalization, multipart encoding, HPP)
+- [ ] **Code review sign-off** — security-focused review of auth middleware, JWT validation, Redis key design
+
+---
+
+## Stage 8 — Distribution / Release ✗
+
+Blocked by: Stage 7 completion.
+
+- [ ] **Release notes / CHANGELOG.md** — per-version feature and security fix log
+- [ ] **Container registry push** — publish signed image to registry (GHCR, Docker Hub, or private)
+- [ ] **Helm chart or Kubernetes manifests** — for orchestrated deployments
+- [ ] **PyPI package** (optional) — if distributing as a library rather than a service
+
+---
+
+## Stage 9 — Client Installation & Validation ✗
+
+Blocked by: Stage 8 completion.
+
+- [ ] **Installation guide** — step-by-step for bare-metal, Docker, and Kubernetes deployment
+- [ ] **Post-install validation script** — `scripts/validate_install.sh` that verifies Redis, TLS, auth, and `/healthz`
+- [ ] **Configuration reference** — complete env var documentation with types, defaults, and examples
+- [ ] **Upgrade guide** — rolling restart procedure, Redis schema migration notes
+
+---
+
+## Stage 10 — Production & Maintenance ✗
+
+Blocked by: Stage 9 completion.
+
+- [ ] **Grafana alert rules** — alert on: auth failure spike, rate limit hit rate > 10%, bot block surge, Redis down
+- [ ] **Runbook** — on-call procedures for Redis failover, cert renewal, YARA rule update, rate limit tuning
+- [ ] **Log rotation** — configure `logrotate` for `LOG_PATH` JSONL file
+- [ ] **SLOs defined** — uptime target, p99 latency budget, false-positive rate threshold for WAF
+- [ ] **YARA rule update process** — documented workflow for adding/testing/deploying new `.yar` files without downtime
+- [ ] **API key rotation policy** — documented schedule (e.g., 90-day TTL default, automated reminder)
+
+---
+
+## Feature Readiness Reference (Stage 2–3 perspective)
+
+| Feature | Completeness | Notes |
+|---------|-------------|-------|
+| Auth — JWT | 97% | Globally enforced, admin issuance, `require_jwt` dep |
+| Auth — API Key | 97% | TTL, rotation, revocation, globally enforced |
+| RBAC | 85% | 5-level IntEnum, `require_role()`. No business routes to protect yet |
+| API Rate Limiting | 90% | Per-IP + per-API-key, 429, Prometheus |
+| Injection Detection — regex | 90% | 96 patterns, recursive JSON scan, YARA hook |
+| Injection Detection — YARA | 75% | 20 rules across 4 files |
+| Bot Detection | 90% | 13 rules, risk accumulator, bypass IPs |
+| Data Exfiltration Detection | 80% | 4 heuristics, Redis-backed, Prometheus |
+| Payload Validation | 80% | Pydantic, NFC, Content-Type dep, 2 MB cap |
+| Observability — JSONL | 90% | All fields, auto-creates dirs, stderr fallback |
+| Observability — Prometheus | 90% | 7 counters, 2 histograms, 2 gauges |
+| Dashboard | 90% | Live UI, auto-refresh, auth guard. Missing: pagination |
+| Admin API | 95% | Token + API key CRUD, RBAC-enforced |
+| Enforcement shell | 95% | Full middleware stack + Nginx config |
+| Redis resilience | 95% | Cooldown, retry backoff, mark_failed(), Sentinel HA |
+| TLS provisioning | 95% | gen_cert.sh (self-signed + Certbot) |
+| Test coverage | 40% | 36 tests (auth, WAF, rate limit, admin). Bot/exfil/YARA/load missing |

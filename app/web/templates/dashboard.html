@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RitAPI Advanced — Security Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            surface: "#0f1117",
+            panel:   "#161b27",
+            border:  "#1e2636",
+            accent:  "#3b82f6",
+          },
+          fontFamily: { mono: ["JetBrains Mono", "Fira Code", "monospace"] },
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background: #0f1117; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #0f1117; }
+    ::-webkit-scrollbar-thumb { background: #1e2636; border-radius: 3px; }
+    .fade-in { animation: fadeIn .25s ease; }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
+    .badge { @apply inline-flex items-center rounded px-2 py-0.5 text-xs font-mono font-semibold; }
+  </style>
+</head>
+
+<body class="text-slate-200 font-mono min-h-screen">
+
+<!-- Top Bar -->
+<header class="bg-panel border-b border-border px-6 py-3 flex items-center justify-between sticky top-0 z-10">
+  <div class="flex items-center gap-3">
+    <div class="w-2 h-2 rounded-full bg-accent animate-pulse"></div>
+    <span class="text-sm font-semibold tracking-widest uppercase text-slate-300">RitAPI Advanced</span>
+    <span class="text-slate-600 text-xs">/ Security Dashboard</span>
+  </div>
+  <div class="flex items-center gap-4 text-xs text-slate-500">
+    <span id="status-redis" class="badge bg-slate-800 text-slate-400">Redis …</span>
+    <span id="status-yara"  class="badge bg-slate-800 text-slate-400">YARA …</span>
+    <span id="status-log"   class="badge bg-slate-800 text-slate-400">Log …</span>
+    <span id="last-refresh" class="text-slate-600">–</span>
+    <button onclick="refresh()" class="text-accent hover:text-blue-400 transition" title="Refresh now">↺</button>
+  </div>
+</header>
+
+<!-- Main -->
+<main class="px-6 py-6 space-y-6 max-w-screen-2xl mx-auto">
+
+  <!-- Stat Cards -->
+  <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="bg-panel border border-border rounded-lg p-4 fade-in">
+      <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Blocked (last 200)</p>
+      <p id="stat-blocked" class="text-3xl font-bold text-red-400">–</p>
+    </div>
+    <div class="bg-panel border border-border rounded-lg p-4 fade-in">
+      <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Monitored</p>
+      <p id="stat-monitored" class="text-3xl font-bold text-yellow-400">–</p>
+    </div>
+    <div class="bg-panel border border-border rounded-lg p-4 fade-in">
+      <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Rate-Limited IPs</p>
+      <p id="stat-rate-ips" class="text-3xl font-bold text-orange-400">–</p>
+    </div>
+    <div class="bg-panel border border-border rounded-lg p-4 fade-in">
+      <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Bot Risk IPs</p>
+      <p id="stat-bot-ips" class="text-3xl font-bold text-purple-400">–</p>
+    </div>
+  </section>
+
+  <!-- Charts row -->
+  <section class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+    <!-- Detection breakdown -->
+    <div class="bg-panel border border-border rounded-lg p-4 fade-in">
+      <p class="text-xs text-slate-500 uppercase tracking-wider mb-3">Detection Breakdown</p>
+      <div id="detection-bars" class="space-y-2"></div>
+    </div>
+
+    <!-- Top blocked IPs -->
+    <div class="bg-panel border border-border rounded-lg p-4 fade-in">
+      <p class="text-xs text-slate-500 uppercase tracking-wider mb-3">Top Blocked IPs</p>
+      <div id="top-ips" class="space-y-2"></div>
+    </div>
+
+  </section>
+
+  <!-- Events Table -->
+  <section class="bg-panel border border-border rounded-lg fade-in">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-border">
+      <p class="text-xs text-slate-500 uppercase tracking-wider">Recent Events</p>
+      <div class="flex items-center gap-3">
+        <input id="filter-input" type="text" placeholder="Filter by IP, type, path…"
+          class="bg-surface border border-border rounded px-3 py-1 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:border-accent w-56"
+          oninput="applyFilter()" />
+        <select id="filter-action"
+          class="bg-surface border border-border rounded px-2 py-1 text-xs text-slate-300 focus:outline-none focus:border-accent"
+          onchange="applyFilter()">
+          <option value="">All actions</option>
+          <option value="block">block</option>
+          <option value="monitor">monitor</option>
+          <option value="allow">allow</option>
+        </select>
+      </div>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="text-slate-500 border-b border-border">
+            <th class="px-4 py-2 text-left font-normal">Timestamp</th>
+            <th class="px-4 py-2 text-left font-normal">IP</th>
+            <th class="px-4 py-2 text-left font-normal">Method</th>
+            <th class="px-4 py-2 text-left font-normal">Path</th>
+            <th class="px-4 py-2 text-left font-normal">Action</th>
+            <th class="px-4 py-2 text-left font-normal">Detection</th>
+            <th class="px-4 py-2 text-left font-normal">Score</th>
+            <th class="px-4 py-2 text-left font-normal">Reasons</th>
+          </tr>
+        </thead>
+        <tbody id="events-tbody" class="divide-y divide-border"></tbody>
+      </table>
+    </div>
+    <div id="events-empty" class="hidden text-center py-12 text-slate-600 text-sm">No events yet.</div>
+  </section>
+
+</main>
+
+<script>
+  let allEvents = [];
+
+  // ---- Colour helpers ----
+  function actionBadge(action) {
+    const map = {
+      block:   "bg-red-900/60 text-red-300",
+      monitor: "bg-yellow-900/60 text-yellow-300",
+      allow:   "bg-green-900/60 text-green-300",
+    };
+    return `<span class="badge ${map[action] ?? 'bg-slate-800 text-slate-400'}">${action}</span>`;
+  }
+
+  function detectionBadge(type) {
+    const col = type.startsWith("bot")          ? "bg-purple-900/60 text-purple-300"
+              : type.startsWith("yara")         ? "bg-pink-900/60 text-pink-300"
+              : type === "rate_limit"            ? "bg-orange-900/60 text-orange-300"
+              : ["xss","sqli","cmdi","ldap",
+                 "path_traversal","scanner_ua"].includes(type)
+                                                ? "bg-red-900/60 text-red-300"
+              : "bg-slate-800 text-slate-400";
+    return `<span class="badge ${col}">${type}</span>`;
+  }
+
+  function methodBadge(method) {
+    const map = { GET:"text-sky-400", POST:"text-green-400", PUT:"text-yellow-400",
+                  PATCH:"text-orange-400", DELETE:"text-red-400" };
+    return `<span class="${map[method] ?? 'text-slate-400'}">${method}</span>`;
+  }
+
+  function fmtTime(iso) {
+    if (!iso) return "–";
+    try {
+      const d = new Date(iso);
+      return d.toLocaleTimeString("en-GB", {hour12: false}) + " " +
+             d.toLocaleDateString("en-GB", {day:"2-digit", month:"short"});
+    } catch { return iso; }
+  }
+
+  function scoreColour(s) {
+    if (s >= 0.8) return "text-red-400";
+    if (s >= 0.5) return "text-yellow-400";
+    return "text-slate-400";
+  }
+
+  // ---- Render ----
+  function renderEvents(events) {
+    const tbody = document.getElementById("events-tbody");
+    const empty = document.getElementById("events-empty");
+
+    if (!events.length) {
+      tbody.innerHTML = "";
+      empty.classList.remove("hidden");
+      return;
+    }
+    empty.classList.add("hidden");
+
+    tbody.innerHTML = events.map(e => `
+      <tr class="hover:bg-white/[.02] transition">
+        <td class="px-4 py-2 text-slate-500 whitespace-nowrap">${fmtTime(e.timestamp)}</td>
+        <td class="px-4 py-2 font-mono text-slate-300">${e.client_ip ?? "–"}</td>
+        <td class="px-4 py-2">${methodBadge(e.method ?? "")}</td>
+        <td class="px-4 py-2 text-slate-400 max-w-[200px] truncate" title="${e.path ?? ""}">${e.path ?? "–"}</td>
+        <td class="px-4 py-2">${actionBadge(e.action ?? "")}</td>
+        <td class="px-4 py-2">${detectionBadge(e.detection_type ?? "none")}</td>
+        <td class="px-4 py-2 ${scoreColour(e.score ?? 0)}">${(e.score ?? 0).toFixed(2)}</td>
+        <td class="px-4 py-2 text-slate-500 max-w-[260px] truncate" title="${e.reasons ?? ""}">${e.reasons ?? "–"}</td>
+      </tr>
+    `).join("");
+  }
+
+  function renderDetectionBars(byType) {
+    const el = document.getElementById("detection-bars");
+    const entries = Object.entries(byType).sort((a,b) => b[1]-a[1]);
+    const max = entries[0]?.[1] || 1;
+    el.innerHTML = entries.map(([type, count]) => `
+      <div class="flex items-center gap-2">
+        <span class="w-32 text-xs text-slate-400 truncate">${type}</span>
+        <div class="flex-1 bg-surface rounded h-2 overflow-hidden">
+          <div class="h-2 bg-accent rounded" style="width:${Math.max(2, (count/max)*100)}%"></div>
+        </div>
+        <span class="text-xs text-slate-500 w-8 text-right">${count}</span>
+      </div>
+    `).join("") || '<p class="text-slate-600 text-xs">No data</p>';
+  }
+
+  function renderTopIPs(ips) {
+    const el = document.getElementById("top-ips");
+    el.innerHTML = ips.map((entry, i) => `
+      <div class="flex items-center gap-3">
+        <span class="text-xs text-slate-600 w-4">${i+1}</span>
+        <span class="font-mono text-xs text-slate-300 flex-1">${entry.ip || "unknown"}</span>
+        <span class="badge bg-red-900/60 text-red-300">${entry.count} blocks</span>
+      </div>
+    `).join("") || '<p class="text-slate-600 text-xs">No blocked IPs yet</p>';
+  }
+
+  // ---- Filter ----
+  function applyFilter() {
+    const text   = document.getElementById("filter-input").value.toLowerCase();
+    const action = document.getElementById("filter-action").value;
+    const filtered = allEvents.filter(e => {
+      const matchText = !text || [e.client_ip, e.path, e.detection_type, e.reasons]
+        .some(f => (f ?? "").toLowerCase().includes(text));
+      const matchAction = !action || e.action === action;
+      return matchText && matchAction;
+    });
+    renderEvents(filtered);
+  }
+
+  // ---- Status badges ----
+  function updateStatus(data) {
+    const redisEl = document.getElementById("status-redis");
+    const yaraEl  = document.getElementById("status-yara");
+    const logEl   = document.getElementById("status-log");
+
+    function set(el, label, ok) {
+      el.textContent = label;
+      el.className = `badge ${ok ? "bg-green-900/60 text-green-300" : "bg-red-900/60 text-red-300"}`;
+    }
+
+    set(redisEl, `Redis: ${data.redis}`,  data.redis === "ok");
+    set(yaraEl,  `YARA: ${data.yara}`,    data.yara === "loaded");
+    set(logEl,   `Log: ${data.log_file}`, data.log_file === "ok");
+  }
+
+  // ---- Main refresh ----
+  async function refresh() {
+    try {
+      const [evRes, statsRes, statusRes] = await Promise.all([
+        fetch("/dashboard/events?limit=100"),
+        fetch("/dashboard/stats"),
+        fetch("/dashboard/status"),
+      ]);
+
+      const evData     = await evRes.json();
+      const statsData  = await statsRes.json();
+      const statusData = await statusRes.json();
+
+      allEvents = evData.events ?? [];
+
+      // Stats cards
+      document.getElementById("stat-blocked").textContent   = statsData.blocked   ?? 0;
+      document.getElementById("stat-monitored").textContent = statsData.monitored  ?? 0;
+      document.getElementById("stat-rate-ips").textContent  = statsData.redis?.rate_limited_ips ?? 0;
+      document.getElementById("stat-bot-ips").textContent   = statsData.redis?.bot_risk_ips     ?? 0;
+
+      renderDetectionBars(statsData.by_detection_type ?? {});
+      renderTopIPs(statsData.top_blocked_ips ?? []);
+      applyFilter();
+      updateStatus(statusData);
+
+      document.getElementById("last-refresh").textContent =
+        "Updated " + new Date().toLocaleTimeString("en-GB", {hour12: false});
+
+    } catch (err) {
+      console.error("Dashboard refresh error:", err);
+    }
+  }
+
+  // Auto-refresh every 15 seconds
+  refresh();
+  setInterval(refresh, 15_000);
+</script>
+</body>
+</html>

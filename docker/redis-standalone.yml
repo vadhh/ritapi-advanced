@@ -1,0 +1,16 @@
+# docker/redis-standalone.yml
+# Single Redis instance for development.
+# Start: docker compose -f docker/redis-standalone.yml up -d
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: ritapi-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --save 60 1 --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
