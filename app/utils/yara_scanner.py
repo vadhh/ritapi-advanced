@@ -14,7 +14,7 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 try:
     import yara
@@ -30,9 +30,9 @@ logger = logging.getLogger(__name__)
 class YARAMatch:
     rule: str
     namespace: str
-    tags: List[str] = field(default_factory=list)
-    meta: Dict[str, Any] = field(default_factory=dict)
-    strings: List[tuple] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
+    meta: dict[str, Any] = field(default_factory=dict)
+    strings: list[tuple] = field(default_factory=list)
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
 
     def to_dict(self) -> dict:
@@ -62,15 +62,15 @@ class YARAScanner:
 
     def __init__(
         self,
-        rules_dir: Optional[str] = None,
+        rules_dir: str | None = None,
         max_scan_size: int = 2 * 1024 * 1024,  # 2 MB — matches PRD body limit
     ):
         self.max_scan_size = max_scan_size
-        self.compiled_rules: Optional[Any] = None
+        self.compiled_rules: Any | None = None
         self.rules_loaded = False
         self.total_scans = 0
         self.total_matches = 0
-        self.scans_by_category: Dict[str, int] = {}
+        self.scans_by_category: dict[str, int] = {}
 
         if not YARA_AVAILABLE:
             logger.warning("yara-python not installed — YARA scanning disabled.")
@@ -87,7 +87,7 @@ class YARAScanner:
             except Exception as e:
                 logger.warning("Failed to load YARA rules from %s: %s", self.rules_dir, e)
 
-    def compile_rules(self, rules_dir: Optional[str] = None) -> bool:
+    def compile_rules(self, rules_dir: str | None = None) -> bool:
         if not YARA_AVAILABLE:
             return False
 
@@ -104,7 +104,7 @@ class YARAScanner:
             return False
 
         # One namespace per file — use filename stem so all files are included
-        rule_dict: Dict[str, str] = {}
+        rule_dict: dict[str, str] = {}
         for rule_file in rule_files:
             ns = rule_file.stem  # e.g. "sqli", "xss", "shell_injection"
             if ns not in rule_dict:
@@ -115,7 +115,7 @@ class YARAScanner:
         logger.info("YARA: compiled %d namespace(s) from %s", len(rule_dict), self.rules_dir)
         return True
 
-    def scan_payload(self, payload: bytes | str, timeout: int = 30) -> List[YARAMatch]:
+    def scan_payload(self, payload: bytes | str, timeout: int = 30) -> list[YARAMatch]:
         if not self.rules_loaded:
             return []
 
@@ -132,13 +132,16 @@ class YARAScanner:
             logger.error("YARA scan error: %s", e)
             return []
 
-        results: List[YARAMatch] = []
+        results: list[YARAMatch] = []
         for m in raw_matches:
-            strings: List[tuple] = []
+            strings: list[tuple] = []
             for s in (m.strings or []):
                 if hasattr(s, "instances"):
                     for i in s.instances:
-                        strings.append((i.offset, s.identifier, i.matched_data.decode("utf-8", errors="ignore")))
+                        strings.append((
+                            i.offset, s.identifier,
+                            i.matched_data.decode("utf-8", errors="ignore"),
+                        ))
                 elif isinstance(s, tuple) and len(s) >= 3:
                     strings.append((s[0], s[1], s[2].decode("utf-8", errors="ignore")))
 
@@ -177,10 +180,10 @@ class YARAScanner:
         self.scans_by_category = {}
 
 
-_scanner_instance: Optional[YARAScanner] = None
+_scanner_instance: YARAScanner | None = None
 
 
-def get_yara_scanner(rules_dir: Optional[str] = None, force_reload: bool = False) -> YARAScanner:
+def get_yara_scanner(rules_dir: str | None = None, force_reload: bool = False) -> YARAScanner:
     global _scanner_instance
     if _scanner_instance is None or force_reload:
         _scanner_instance = YARAScanner(rules_dir=rules_dir)

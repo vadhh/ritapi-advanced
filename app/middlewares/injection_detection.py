@@ -282,7 +282,10 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
 
     @staticmethod
     def _log_and_block(client_ip: str, request: Request, category: str, snippet: str) -> None:
-        logger.warning("Injection blocked [%s] from %s on %s — %s", category, client_ip, request.url.path, snippet[:80])
+        logger.warning(
+            "Injection blocked [%s] from %s on %s — %s",
+            category, client_ip, request.url.path, snippet[:80],
+        )
         log_request(
             client_ip=client_ip,
             path=request.url.path,

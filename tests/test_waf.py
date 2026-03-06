@@ -2,8 +2,8 @@
 Tests for injection detection (WAF) middleware.
 """
 import json
-import pytest
 
+import pytest
 
 UA = "pytest-test-client/1.0"
 

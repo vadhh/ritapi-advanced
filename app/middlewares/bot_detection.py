@@ -8,7 +8,6 @@ Changes from source:
   - Runs AFTER call_next() so response status code is available for error-rate rules
   - Gracefully degrades (fail-open) when Redis is unavailable
 """
-import json
 import logging
 import os
 
@@ -41,7 +40,7 @@ RULES: dict = {
     "ENDPOINT_SCANNING":          {"threshold": 15,      "window": 300, "score": 75},
     "SUSPICIOUS_USER_AGENT":      {"score": 60},
     "NO_USER_AGENT":              {"score": 50},
-    "HIGH_ERROR_RATE":            {"threshold": 0.5,     "window": 60,  "min_requests": 10, "score": 75},
+    "HIGH_ERROR_RATE":            {"threshold": 0.5, "window": 60, "min_requests": 10, "score": 75},
     "CONSECUTIVE_ERRORS":         {"count": 5,                          "score": 65},
     "REPEATED_404":               {"threshold": 10,      "window": 60,  "score": 60},
     "REPEATED_401":               {"threshold": 5,       "window": 300, "score": 80},
@@ -122,7 +121,9 @@ def _detect(redis, ip: str, method: str, path: str, ua: str,
         if burst_count > RULES["BURST_TRAFFIC"]["threshold"]:
             hits.append(("BURST_TRAFFIC", RULES["BURST_TRAFFIC"]["score"]))
 
-        ep_count = _sadd_count(redis, f"bot:endpoints:{ip}", path, RULES["ENDPOINT_SCANNING"]["window"])
+        ep_count = _sadd_count(
+            redis, f"bot:endpoints:{ip}", path, RULES["ENDPOINT_SCANNING"]["window"]
+        )
         if ep_count > RULES["ENDPOINT_SCANNING"]["threshold"]:
             hits.append(("ENDPOINT_SCANNING", RULES["ENDPOINT_SCANNING"]["score"]))
 
@@ -242,7 +243,9 @@ class BotDetectionMiddleware(BaseHTTPMiddleware):
 
         for name, _ in hits:
             bot_signals.labels(rule=name).inc()
-        requests_total.labels(method=method, action=action, detection_type=f"bot:{top_name.lower()}").inc()
+        requests_total.labels(
+            method=method, action=action, detection_type=f"bot:{top_name.lower()}"
+        ).inc()
         threat_score.observe(score)
         if cumulative >= BLOCK_THRESHOLD:
             bot_blocks.inc()

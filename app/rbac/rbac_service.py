@@ -29,13 +29,10 @@ Role hierarchy (higher value = more permissive):
     AUDITOR     = 2
     VIEWER      = 1
 """
+from collections.abc import Callable
 from enum import IntEnum
-from typing import Callable
 
-from fastapi import Depends, HTTPException, status
-
-from app.auth.api_key_handler import require_api_key
-from app.auth.jwt_handler import require_jwt
+from fastapi import HTTPException, status
 
 
 class UserRole(IntEnum):
@@ -49,8 +46,8 @@ class UserRole(IntEnum):
     def from_string(cls, value: str) -> "UserRole":
         try:
             return cls[value.upper()]
-        except KeyError:
-            raise ValueError(f"Unknown role: {value!r}")
+        except KeyError as err:
+            raise ValueError(f"Unknown role: {value!r}") from err
 
 
 # ---------------------------------------------------------------------------
@@ -70,9 +67,8 @@ async def resolve_claims(request) -> dict:
     Attempt JWT auth first, then API key auth.
     Raises 401 if neither is present/valid.
     """
-    from fastapi import Request
-    from app.auth.jwt_handler import get_token_from_request, verify_token
     from app.auth.api_key_handler import validate_api_key
+    from app.auth.jwt_handler import get_token_from_request, verify_token
 
     # Try JWT
     token = get_token_from_request(request)
@@ -123,11 +119,11 @@ def require_role(min_role: UserRole) -> Callable:
 
         try:
             caller_role = UserRole.from_string(role_str)
-        except ValueError:
+        except ValueError as err:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Unrecognised role: {role_str!r}",
-            )
+            ) from err
 
         if caller_role < min_role:
             raise HTTPException(

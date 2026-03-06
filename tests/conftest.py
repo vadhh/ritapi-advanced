@@ -5,6 +5,7 @@ Uses FastAPI's TestClient (synchronous httpx wrapper).
 Redis-dependent tests are skipped automatically if Redis is unavailable.
 """
 import os
+
 import pytest
 
 # Set required env vars before any app import
@@ -24,8 +25,9 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("YARA_RULES_DIR", os.path.join(_REPO_ROOT, "rules"))
 
 from fastapi.testclient import TestClient
-from app.main import app
+
 from app.auth.jwt_handler import create_access_token
+from app.main import app
 from app.utils.redis_client import RedisClientSingleton
 
 

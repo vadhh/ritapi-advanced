@@ -13,8 +13,7 @@ Changes:
 """
 import logging
 import os
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, Request, status
 from jose import JWTError, jwt
@@ -29,7 +28,7 @@ if not SECRET_KEY:
     raise RuntimeError("SECRET_KEY environment variable is not set.")
 
 
-def create_access_token(subject: str, role: str, extra: Optional[dict] = None) -> str:
+def create_access_token(subject: str, role: str, extra: dict | None = None) -> str:
     """
     Issue a signed JWT.
 
@@ -41,14 +40,14 @@ def create_access_token(subject: str, role: str, extra: Optional[dict] = None) -
     Returns:
         Encoded JWT string.
     """
-    expire = datetime.now(timezone.utc) + timedelta(minutes=EXPIRE_MINUTES)
+    expire = datetime.now(UTC) + timedelta(minutes=EXPIRE_MINUTES)
     payload = {"sub": subject, "role": role, "exp": expire}
     if extra:
         payload.update(extra)
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def verify_token(token: str) -> Optional[dict]:
+def verify_token(token: str) -> dict | None:
     """
     Decode and validate a JWT.
 
@@ -61,7 +60,7 @@ def verify_token(token: str) -> Optional[dict]:
         return None
 
 
-def get_token_from_request(request: Request) -> Optional[str]:
+def get_token_from_request(request: Request) -> str | None:
     """Extract Bearer token from Authorization header."""
     auth = request.headers.get("authorization", "")
     if auth.lower().startswith("bearer "):

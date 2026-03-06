@@ -16,9 +16,9 @@ import pytest
 def scanner():
     """Module-scoped YARA scanner. Skips if rules not loaded."""
     try:
-        from app.utils.yara_scanner import get_yara_scanner
         # Reset singleton so it picks up YARA_RULES_DIR from conftest env
         from app.utils import yara_scanner as _ys
+        from app.utils.yara_scanner import get_yara_scanner
         _ys._scanner_instance = None
         s = get_yara_scanner()
     except ImportError:

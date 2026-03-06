@@ -12,9 +12,9 @@ Verifies that when Redis is unavailable:
 Uses unittest.mock.patch to simulate Redis being unavailable without
 actually stopping the Redis server.
 """
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
+import pytest
 
 UA = "pytest-test-client/1.0"
 
@@ -108,7 +108,6 @@ def test_api_key_auth_returns_401_without_redis(client, no_redis):
 
 def test_mark_failed_sets_last_failure_timestamp():
     """mark_failed() sets _last_failure so subsequent calls respect cooldown."""
-    import time
     from app.utils.redis_client import RedisClientSingleton
 
     original_instance = RedisClientSingleton._instance

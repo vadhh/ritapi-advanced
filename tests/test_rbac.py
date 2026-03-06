@@ -11,7 +11,10 @@ Verifies that role hierarchy is enforced on admin endpoints:
 
 Tests use admin endpoints since they are the only RBAC-protected routes.
 """
+from datetime import UTC
+
 import pytest
+
 from app.auth.jwt_handler import create_access_token
 
 UA = "pytest-test-client/1.0"
@@ -121,13 +124,15 @@ def test_role_hierarchy_super_admin_can_do_admin_operations(client, redis):
 
 def test_missing_role_claim_rejected(client):
     """JWT with no role claim is rejected by admin endpoints."""
-    from app.auth.jwt_handler import SECRET_KEY, ALGORITHM
+    from datetime import datetime, timedelta
+
     from jose import jwt as jose_jwt
-    from datetime import datetime, timedelta, timezone
+
+    from app.auth.jwt_handler import ALGORITHM, SECRET_KEY
     # Issue a token without a role field
     payload = {
         "sub": "no-role-user",
-        "exp": datetime.now(timezone.utc) + timedelta(minutes=60),
+        "exp": datetime.now(UTC) + timedelta(minutes=60),
     }
     token = jose_jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
     resp = client.post(
@@ -144,13 +149,15 @@ def test_missing_role_claim_rejected(client):
 
 def test_invalid_role_string_rejected(client):
     """JWT with an unrecognised role string is rejected."""
-    from app.auth.jwt_handler import SECRET_KEY, ALGORITHM
+    from datetime import datetime, timedelta
+
     from jose import jwt as jose_jwt
-    from datetime import datetime, timedelta, timezone
+
+    from app.auth.jwt_handler import ALGORITHM, SECRET_KEY
     payload = {
         "sub": "bad-role-user",
         "role": "GOD_MODE",
-        "exp": datetime.now(timezone.utc) + timedelta(minutes=60),
+        "exp": datetime.now(UTC) + timedelta(minutes=60),
     }
     token = jose_jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
     resp = client.post(

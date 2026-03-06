@@ -3,24 +3,25 @@ RitAPI Advanced — API & IP Protection System
 Entry point for the FastAPI application.
 """
 from dotenv import load_dotenv
+
 load_dotenv()
 
 from fastapi import FastAPI, Response
-from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
-from app.middlewares.rate_limit import RateLimitMiddleware
-from app.middlewares.bot_detection import BotDetectionMiddleware
-from app.middlewares.injection_detection import InjectionDetectionMiddleware
-from app.middlewares.exfiltration_detection import ExfiltrationDetectionMiddleware
 from app.middlewares.auth import AuthMiddleware
+from app.middlewares.bot_detection import BotDetectionMiddleware
 from app.middlewares.decision_engine import DecisionEngineMiddleware
-from app.web.dashboard import router as dashboard_router
+from app.middlewares.exfiltration_detection import ExfiltrationDetectionMiddleware
+from app.middlewares.injection_detection import InjectionDetectionMiddleware
+from app.middlewares.rate_limit import RateLimitMiddleware
 from app.web.admin import router as admin_router
+from app.web.dashboard import router as dashboard_router
 
 app = FastAPI(title="RitAPI Advanced", version="0.1.0")
 
 # Middleware stack — last add_middleware() runs first on incoming requests.
-# Request order: RateLimit → Auth → BotDetection → InjectionDetection → Exfiltration → DecisionEngine → route
+# Request order:  RateLimit → Auth → Bot → Injection → Exfiltration → DecisionEngine → route
 # Response order: reversed.
 app.add_middleware(DecisionEngineMiddleware)        # innermost: unified block gate
 app.add_middleware(ExfiltrationDetectionMiddleware)
@@ -42,7 +43,7 @@ def health():
 @app.get("/metrics", tags=["Observability"], include_in_schema=False)
 def metrics():
     """Prometheus metrics scrape endpoint."""
-    from app.utils.metrics import active_rate_limit_keys, active_bot_risk_ips
+    from app.utils.metrics import active_bot_risk_ips, active_rate_limit_keys
     from app.utils.redis_client import RedisClientSingleton
 
     # Update gauges from Redis on every scrape
@@ -51,7 +52,7 @@ def metrics():
         try:
             active_rate_limit_keys.set(len(redis.keys("ritapi:rate:ip:*")))
             active_bot_risk_ips.set(len(redis.keys("bot:risk:*")))
-        except Exception:
+        except Exception:  # noqa: S110 — Redis gauge update is best-effort; failure is non-critical
             pass
 
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)

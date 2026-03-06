@@ -104,7 +104,10 @@ def _redis_stats() -> dict[str, Any]:
 def _aggregate(events: list[dict]) -> dict[str, Any]:
     actions = Counter(e.get("action", "unknown") for e in events)
     detection_types = Counter(e.get("detection_type", "none") for e in events)
-    top_ips = Counter(e.get("client_ip", "") for e in events if e.get("action") == "block").most_common(5)
+    top_ips = (
+        Counter(e.get("client_ip", "") for e in events if e.get("action") == "block")
+        .most_common(5)
+    )
 
     return {
         "total": len(events),
@@ -147,7 +150,7 @@ async def dashboard_status(_: None = Depends(_require_dashboard_access)):
         try:
             redis.ping()
             redis_ok = True
-        except Exception:
+        except Exception:  # noqa: S110 — Redis ping is a best-effort liveness check
             pass
 
     scanner = get_yara_scanner()

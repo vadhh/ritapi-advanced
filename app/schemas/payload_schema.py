@@ -23,11 +23,10 @@ Body size (≤ 2 MB) and injection scanning are enforced upstream by
 InjectionDetectionMiddleware — no need to repeat here.
 """
 import unicodedata
-from typing import Any, Dict, Optional
+from typing import Any
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import HTTPException, Request, status
 from pydantic import BaseModel, field_validator
-
 
 # ---------------------------------------------------------------------------
 # Shared dependency — Content-Type guard
@@ -74,7 +73,7 @@ class BasePayload(BaseModel):
 
 class BaseRequest(BasePayload):
     """Base for requests that carry optional caller metadata."""
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -92,4 +91,4 @@ class GenericDataPayload(BaseRequest):
     Catch-all schema for endpoints that accept arbitrary JSON objects.
     Use a specific schema whenever the expected shape is known.
     """
-    data: Dict[str, Any]
+    data: dict[str, Any]

@@ -11,16 +11,15 @@ POST /admin/apikey      Issue an API key (ADMIN+ or admin secret)
 POST /admin/apikey/rotate  Rotate an existing key (ADMIN+ or admin secret)
 DELETE /admin/apikey    Revoke an API key (ADMIN+ or admin secret)
 """
-import os
 import logging
+import os
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
-from typing import Optional
 
 from app.auth.api_key_handler import issue_api_key, revoke_api_key, rotate_api_key
 from app.auth.jwt_handler import create_access_token
-from app.rbac.rbac_service import UserRole, require_role, resolve_claims
+from app.rbac.rbac_service import UserRole, require_role
 
 logger = logging.getLogger(__name__)
 
@@ -56,12 +55,12 @@ async def _require_admin_access(
     # Fall through to RBAC check
     try:
         return await require_role(UserRole.ADMIN)(request)
-    except HTTPException:
+    except HTTPException as err:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Provide a valid X-Admin-Secret header or an ADMIN+ JWT / API key.",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from err
 
 
 async def _require_super_admin_access(
@@ -73,12 +72,12 @@ async def _require_super_admin_access(
         return {"subject": "__admin_secret__", "role": "SUPER_ADMIN"}
     try:
         return await require_role(UserRole.SUPER_ADMIN)(request)
-    except HTTPException:
+    except HTTPException as err:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Provide a valid X-Admin-Secret header or a SUPER_ADMIN JWT / API key.",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from err
 
 
 # ---------------------------------------------------------------------------
@@ -86,7 +85,9 @@ async def _require_super_admin_access(
 # ---------------------------------------------------------------------------
 
 class TokenRequest(BaseModel):
-    subject: str = Field(..., min_length=1, max_length=128, description="Identity (username, service name)")
+    subject: str = Field(
+        ..., min_length=1, max_length=128, description="Identity (username, service name)"
+    )
     role: str = Field(..., description="VIEWER | AUDITOR | OPERATOR | ADMIN | SUPER_ADMIN")
 
 
@@ -101,20 +102,22 @@ class TokenResponse(BaseModel):
 class ApiKeyRequest(BaseModel):
     subject: str = Field(..., min_length=1, max_length=128)
     role: str = Field(..., description="VIEWER | AUDITOR | OPERATOR | ADMIN | SUPER_ADMIN")
-    ttl_days: Optional[int] = Field(None, ge=1, le=3650, description="Key TTL in days. Omit for no expiry.")
+    ttl_days: int | None = Field(
+        None, ge=1, le=3650, description="Key TTL in days. Omit for no expiry."
+    )
 
 
 class ApiKeyResponse(BaseModel):
     api_key: str
     subject: str
     role: str
-    expires_in_seconds: Optional[int]
+    expires_in_seconds: int | None
     warning: str = "Store this key securely. It will not be shown again."
 
 
 class ApiKeyRotateRequest(BaseModel):
     old_api_key: str = Field(..., min_length=1)
-    ttl_days: Optional[int] = Field(None, ge=1, le=3650)
+    ttl_days: int | None = Field(None, ge=1, le=3650)
 
 
 class ApiKeyRevokeRequest(BaseModel):
@@ -136,15 +139,21 @@ async def issue_token(
     """
     try:
         role = UserRole.from_string(body.role)
-    except ValueError:
+    except ValueError as err:
         raise HTTPException(
             status_code=422,
-            detail=f"Invalid role {body.role!r}. Valid: VIEWER, AUDITOR, OPERATOR, ADMIN, SUPER_ADMIN",
-        )
+            detail=(
+                f"Invalid role {body.role!r}. "
+                "Valid: VIEWER, AUDITOR, OPERATOR, ADMIN, SUPER_ADMIN"
+            ),
+        ) from err
 
     from app.auth.jwt_handler import EXPIRE_MINUTES
     token = create_access_token(subject=body.subject, role=role.name)
-    logger.info("Token issued: subject=%s role=%s by=%s", body.subject, role.name, caller.get("subject"))
+    logger.info(
+        "Token issued: subject=%s role=%s by=%s",
+        body.subject, role.name, caller.get("subject"),
+    )
     return TokenResponse(
         access_token=token,
         expires_in=EXPIRE_MINUTES * 60,
@@ -164,17 +173,19 @@ async def issue_key(
     """
     try:
         role = UserRole.from_string(body.role)
-    except ValueError:
+    except ValueError as err:
         raise HTTPException(
             status_code=422,
             detail=f"Invalid role {body.role!r}.",
-        )
+        ) from err
 
     ttl_seconds = body.ttl_days * 86400 if body.ttl_days else None
     try:
         raw_key = issue_api_key(body.subject, role.name, ttl_seconds=ttl_seconds)
     except RuntimeError as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)
+        ) from e
 
     logger.info("API key issued: subject=%s role=%s ttl_days=%s by=%s",
                 body.subject, role.name, body.ttl_days, caller.get("subject"))
