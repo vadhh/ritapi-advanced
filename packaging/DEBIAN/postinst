@@ -1,0 +1,53 @@
+#!/bin/bash
+set -e
+
+case "$1" in
+    configure)
+        # Create system user if it doesn't exist
+        if ! id -u ritapi >/dev/null 2>&1; then
+            adduser --system --group --no-create-home \
+                    --home /opt/ritapi-advanced \
+                    --shell /usr/sbin/nologin \
+                    --gecos "RitAPI Advanced service user" \
+                    ritapi
+        fi
+
+        # Create log directory
+        mkdir -p /var/log/ritapi
+        chown ritapi:ritapi /var/log/ritapi
+        chmod 750 /var/log/ritapi
+
+        # Set ownership on app directory
+        chown -R ritapi:ritapi /opt/ritapi-advanced
+
+        # Install logrotate config
+        if [ -f /opt/ritapi-advanced/scripts/logrotate.conf ]; then
+            cp /opt/ritapi-advanced/scripts/logrotate.conf \
+               /etc/logrotate.d/ritapi-advanced
+        fi
+
+        # Reload systemd and enable the service
+        systemctl daemon-reload
+        systemctl enable ritapi-advanced.service
+
+        # Don't auto-start — user must configure /etc/ritapi-advanced/env first
+        echo ""
+        echo "RitAPI Advanced installed."
+        echo ""
+        echo "Next steps:"
+        echo "  1. Edit /etc/ritapi-advanced/env (set SECRET_KEY, ADMIN_SECRET, REDIS_URL)"
+        echo "  2. Start: sudo systemctl start ritapi-advanced"
+        echo "  3. Validate: sudo bash /opt/ritapi-advanced/scripts/validate_install.sh"
+        echo ""
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+
+    *)
+        echo "postinst called with unknown argument '$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

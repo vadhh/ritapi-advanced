@@ -1,0 +1,30 @@
+[Unit]
+Description=RitAPI Advanced — Layer-7 API Protection Service
+Documentation=file:///opt/ritapi-advanced/INSTALL.md
+After=network.target redis.service
+Wants=redis.service
+
+[Service]
+Type=simple
+User=ritapi
+Group=ritapi
+WorkingDirectory=/opt/ritapi-advanced
+EnvironmentFile=/etc/ritapi-advanced/env
+ExecStart=/opt/ritapi-advanced/.venv/bin/uvicorn app.main:app \
+    --host 0.0.0.0 \
+    --port 8001 \
+    --workers 2 \
+    --log-level warning
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/log/ritapi /etc/ritapi-advanced
+
+[Install]
+WantedBy=multi-user.target

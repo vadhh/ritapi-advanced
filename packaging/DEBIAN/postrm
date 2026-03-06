@@ -1,0 +1,28 @@
+#!/bin/bash
+set -e
+
+case "$1" in
+    purge)
+        # Remove service user on purge (not on plain remove)
+        if id -u ritapi >/dev/null 2>&1; then
+            deluser --system ritapi || true
+        fi
+
+        # Remove logrotate config
+        rm -f /etc/logrotate.d/ritapi-advanced
+
+        # Remove log directory (data loss — only on purge)
+        rm -rf /var/log/ritapi
+        ;;
+
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        systemctl daemon-reload
+        ;;
+
+    *)
+        echo "postrm called with unknown argument '$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

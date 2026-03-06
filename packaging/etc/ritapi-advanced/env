@@ -1,0 +1,49 @@
+# /etc/ritapi-advanced/env — RitAPI Advanced runtime configuration
+# This file is a dpkg conffile: upgrades will not overwrite your changes.
+#
+# See /opt/ritapi-advanced/CONFIGURATION.md for full reference.
+
+# ---------------------------------------------------------------------------
+# REQUIRED — generate with:
+#   python3 -c "import secrets; print(secrets.token_hex(32))"
+# ---------------------------------------------------------------------------
+SECRET_KEY=REPLACE_WITH_GENERATED_KEY
+ADMIN_SECRET=REPLACE_WITH_GENERATED_SECRET
+
+# ---------------------------------------------------------------------------
+# Redis (required)
+# ---------------------------------------------------------------------------
+REDIS_URL=redis://127.0.0.1:6379/1
+REDIS_PASSWORD=
+
+# ---------------------------------------------------------------------------
+# JWT
+# ---------------------------------------------------------------------------
+JWT_ALGORITHM=HS256
+JWT_EXPIRE_MINUTES=60
+
+# ---------------------------------------------------------------------------
+# Rate limiting
+# ---------------------------------------------------------------------------
+RATE_LIMIT_REQUESTS=100
+RATE_LIMIT_WINDOW=60
+
+# ---------------------------------------------------------------------------
+# Bot detection — bypass IPs (comma-separated, add monitoring agent IPs)
+# ---------------------------------------------------------------------------
+BOT_DETECTION_BYPASS_IPS=127.0.0.1,::1
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+LOG_PATH=/var/log/ritapi/ritapi_advanced.jsonl
+
+# ---------------------------------------------------------------------------
+# YARA rules
+# ---------------------------------------------------------------------------
+YARA_RULES_DIR=/opt/ritapi-advanced/rules
+
+# ---------------------------------------------------------------------------
+# Environment tag (informational)
+# ---------------------------------------------------------------------------
+ENV=production

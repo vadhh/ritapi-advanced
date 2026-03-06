@@ -1,0 +1,23 @@
+#!/bin/bash
+set -e
+
+case "$1" in
+    remove|upgrade|deconfigure)
+        if systemctl is-active --quiet ritapi-advanced.service; then
+            systemctl stop ritapi-advanced.service
+        fi
+        if systemctl is-enabled --quiet ritapi-advanced.service 2>/dev/null; then
+            systemctl disable ritapi-advanced.service
+        fi
+        ;;
+
+    failed-upgrade)
+        ;;
+
+    *)
+        echo "prerm called with unknown argument '$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

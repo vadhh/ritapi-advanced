@@ -1,0 +1,17 @@
+Package: ritapi-advanced
+Version: 1.0.0
+Architecture: ARCH_PLACEHOLDER
+Maintainer: vadhh <ops@example.com>
+Depends: python3.12, adduser
+Recommends: redis-server, nginx
+Description: Layer-7 API protection service
+ RitAPI Advanced is a standalone FastAPI service providing layer-7 API
+ protection: WAF, rate limiting, bot detection, injection/exfiltration
+ detection, JWT/API-key authentication, and RBAC.
+ .
+ The package bundles a pre-built Python virtualenv — no pip install
+ required on the target host. Redis must be available separately.
+Section: net
+Priority: optional
+Homepage: https://github.com/vadhh/ritapi-advance
+Installed-Size: SIZE_PLACEHOLDER
