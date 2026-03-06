@@ -1,6 +1,6 @@
 # TODO.md — RitAPI Advanced
 
-Last updated: 2026-03-07
+Last updated: 2026-03-07 (Stage 9)
 
 ## Stage Model
 
@@ -15,10 +15,10 @@ Last updated: 2026-03-07
 | 6 | Build & Packaging | ✅ Complete |
 | 7 | Code Signing & Security Audit | ✅ Complete |
 | 8 | Distribution / Release | ✅ Complete |
-| 9 | Client Installation & Validation | ✗ Not started |
+| 9 | Client Installation & Validation | ✅ Complete |
 | 10 | Production & Maintenance | ✗ Not started |
 
-**Current position: Stage 9 (Client Installation & Validation) — Stages 0–8 complete**
+**Current position: Stage 10 (Production & Maintenance) — Stages 0–9 complete**
 
 ---
 
@@ -158,18 +158,16 @@ All modules implemented and running on `localhost:8001`.
 
 ---
 
-## Stage 9 — Client Installation & Validation ✗
+## Stage 9 — Client Installation & Validation ✅
 
-- [ ] **Installation guide** — step-by-step for bare-metal, Docker, and Kubernetes deployment
-- [ ] **Post-install validation script** — `scripts/validate_install.sh` that verifies Redis, TLS, auth, and `/healthz`
-- [ ] **Configuration reference** — complete env var documentation with types, defaults, and examples
-- [ ] **Upgrade guide** — rolling restart procedure, Redis schema migration notes
+- [x] **`INSTALL.md`** — step-by-step guide for bare-metal (systemd), Docker Compose, and Kubernetes (Helm); includes first-login instructions and upgrade procedures for all three deployment targets
+- [x] **`scripts/validate_install.sh`** — 7-section post-install validator: connectivity, auth enforcement, WAF injection blocking (XSS/SQLi/traversal/scanner-UA), rate limiting, Prometheus metrics, admin bootstrap, TLS; exits non-zero on failure; supports `--url`, `--admin-secret`, `--skip-tls` flags
+- [x] **`CONFIGURATION.md`** — complete reference for all environment variables with types, defaults, and examples; Redis key layout; bot detection rule score table; Prometheus metric catalogue; security hardening checklist
+- [x] **Upgrade guide** — rolling restart for Docker Compose, `helm upgrade` + rollback for Kubernetes, safe Redis key flush procedure; in `INSTALL.md`
 
 ---
 
 ## Stage 10 — Production & Maintenance ✗
-
-Blocked by: Stage 9 completion.
 
 - [ ] **Grafana alert rules** — alert on: auth failure spike, rate limit hit rate > 10%, bot block surge, Redis down
 - [ ] **Runbook** — on-call procedures for Redis failover, cert renewal, YARA rule update, rate limit tuning
