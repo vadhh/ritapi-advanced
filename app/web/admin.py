@@ -219,7 +219,8 @@ async def rotate_key(
     # Fetch metadata from the new key to return subject/role
     from app.auth.api_key_handler import validate_api_key
     meta = validate_api_key(new_key) or {}
-    logger.info("API key rotated by=%s", caller.get("subject"))  # nosemgrep: python-logger-credential-disclosure
+    # nosemgrep: python-logger-credential-disclosure — logs caller identity only
+    logger.info("API key rotated by=%s", caller.get("subject"))
     return ApiKeyResponse(
         api_key=new_key,
         subject=meta.get("subject", ""),
@@ -238,7 +239,8 @@ async def revoke_key(
     Requires ADMIN+ or a valid ADMIN_SECRET header.
     """
     deleted = revoke_api_key(body.api_key)
-    logger.info("API key revoke by=%s result=%s", caller.get("subject"), deleted)  # nosemgrep: python-logger-credential-disclosure
+    # nosemgrep: python-logger-credential-disclosure — logs caller identity only
+    logger.info("API key revoke by=%s result=%s", caller.get("subject"), deleted)
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

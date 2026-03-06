@@ -72,7 +72,8 @@ def issue_api_key(subject: str, role: str, ttl_seconds: int | None = None) -> st
     redis.set(rkey, metadata.encode())
     if ttl_seconds is not None:
         redis.expire(rkey, ttl_seconds)
-    logger.info("API key issued for subject=%s role=%s ttl=%s", subject, role, ttl_seconds)  # nosemgrep: python-logger-credential-disclosure
+    # nosemgrep: python-logger-credential-disclosure — logs subject/role/ttl, not the key
+    logger.info("API key issued for subject=%s role=%s ttl=%s", subject, role, ttl_seconds)
     return raw_key
 
 
@@ -107,10 +108,12 @@ def validate_api_key(raw_key: str) -> dict | None:
     try:
         return json.loads(stored)
     except (json.JSONDecodeError, ValueError):
-        logger.error("Corrupt API key metadata for hash %s", _hash(raw_key)[:12])  # nosemgrep: python-logger-credential-disclosure
+        # nosemgrep: python-logger-credential-disclosure — logs hash prefix only
+        logger.error("Corrupt API key metadata for hash %s", _hash(raw_key)[:12])
         return None
     except Exception as exc:
-        logger.error("Redis error reading API key: %s", exc)  # nosemgrep: python-logger-credential-disclosure
+        # nosemgrep: python-logger-credential-disclosure — logs exception, not the key
+        logger.error("Redis error reading API key: %s", exc)
         RedisClientSingleton.mark_failed()
         return None
 
@@ -126,7 +129,8 @@ def revoke_api_key(raw_key: str) -> bool:
         return False
     deleted = redis.delete(_redis_key(raw_key))
     if deleted:
-        logger.info("API key revoked (hash prefix: %s…)", _hash(raw_key)[:12])  # nosemgrep: python-logger-credential-disclosure
+        # nosemgrep: python-logger-credential-disclosure — logs hash prefix only
+        logger.info("API key revoked (hash prefix: %s…)", _hash(raw_key)[:12])
     return bool(deleted)
 
 
