@@ -2,16 +2,13 @@
 #
 # Stages: lint → test → build image → sign image → push to registry
 #
-# Required repository secrets:
-#   REGISTRY_USER      — container registry username (e.g. GitHub username)
-#   REGISTRY_TOKEN     — container registry PAT / password
+# GHCR auth uses the built-in GITHUB_TOKEN — no extra secrets needed for push.
+#
+# Optional secrets (only required for cosign image signing):
 #   COSIGN_PRIVATE_KEY — cosign private key (base64), generated with:
 #                          cosign generate-key-pair
 #   COSIGN_PASSWORD    — passphrase for the cosign key
-#
-# Optional:
-#   REGISTRY           — defaults to ghcr.io
-#   IMAGE_NAME         — defaults to <owner>/<repo>
+#   COSIGN_PUBLIC_KEY  — cosign public key (base64), for verify step
 
 name: CI
 
@@ -139,8 +136,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.REGISTRY_USER }}
-          password: ${{ secrets.REGISTRY_TOKEN }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract image metadata
         id: meta
@@ -183,8 +180,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.REGISTRY_USER }}
-          password: ${{ secrets.REGISTRY_TOKEN }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Sign image with cosign
         env:
