@@ -71,7 +71,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 auth_method = "api_key"
                 claims = validate_api_key(raw_key)
                 if claims is None:
-                    logger.debug("Auth: invalid API key from %s on %s", ip, path)
+                    logger.debug("Auth: invalid API key from %s on %s", ip, path)  # nosemgrep: python-logger-credential-disclosure
 
         # 3. Reject if no valid credential
         if claims is None:

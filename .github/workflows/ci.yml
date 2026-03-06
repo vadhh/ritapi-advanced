@@ -48,8 +48,24 @@ jobs:
       - name: ruff — style / import order
         run: ruff check app/ tests/
 
-      - name: bandit — security linter
+      - name: bandit — SAST (medium/high severity only)
         run: bandit -r app/ -ll --exit-zero
+
+      - name: semgrep — OWASP top-ten ruleset
+        run: |
+          pip install semgrep -q
+          semgrep --config "p/owasp-top-ten" app/ --error --quiet
+
+      - name: pip-audit — dependency CVE scan
+        run: |
+          pip install pip-audit -q
+          pip-audit -r requirements.lock \
+            --ignore-vuln CVE-2024-23342
+
+      - name: gitleaks — secret scanning
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ---------------------------------------------------------------------------
   # 2. Test
@@ -110,6 +126,20 @@ jobs:
           name: coverage-py${{ matrix.python-version }}
           path: coverage.xml
           retention-days: 7
+
+      - name: Generate SBOM
+        if: matrix.python-version == '3.12'
+        run: |
+          pip install cyclonedx-bom -q
+          cyclonedx-py environment --of JSON -o sbom.json
+
+      - name: Upload SBOM
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json
+          retention-days: 90
 
   # ---------------------------------------------------------------------------
   # 3. Build & push container image

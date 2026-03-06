@@ -13,12 +13,12 @@ Last updated: 2026-03-06
 | 4 | Testing / QA | ✅ Complete |
 | 5 | Staging | ✅ Complete |
 | 6 | Build & Packaging | ✅ Complete |
-| 7 | Code Signing & Security Audit | ✗ Not started |
+| 7 | Code Signing & Security Audit | ✅ Complete |
 | 8 | Distribution / Release | ✗ Not started |
 | 9 | Client Installation & Validation | ✗ Not started |
 | 10 | Production & Maintenance | ✗ Not started |
 
-**Current position: Stage 7 (Code Signing & Security Audit) — Stages 0–6 complete**
+**Current position: Stage 8 (Distribution / Release) — Stages 0–7 complete**
 
 ---
 
@@ -137,15 +137,15 @@ All modules implemented and running on `localhost:8001`.
 
 ---
 
-## Stage 7 — Code Signing & Security Audit ✗
+## Stage 7 — Code Signing & Security Audit ✅
 
-- [ ] **SAST scan** — `bandit` (Python security linter) and `semgrep` with OWASP ruleset across all source files
-- [ ] **Dependency audit** — `pip audit` or `safety check` for known CVEs in `requirements.txt`
-- [ ] **SBOM** — generate Software Bill of Materials (`cyclonedx-py` or `syft`)
-- [ ] **Secret scanning** — verify no secrets committed; configure `gitleaks` or `trufflesecurity` in CI
-- [ ] **Penetration test** — manual or tooled attack simulation against a running staging instance; document findings
-- [ ] **WAF bypass review** — review regex patterns for known bypass techniques (Unicode normalization, multipart encoding, HPP)
-- [ ] **Code review sign-off** — security-focused review of auth middleware, JWT validation, Redis key design
+- [x] **SAST** — bandit (0 medium/high findings) + semgrep OWASP top-ten (9 false positives suppressed with `# nosemgrep`); both run in CI lint job
+- [x] **Dependency audit** — `pip-audit` in CI; 1 finding: `ecdsa` CVE-2024-23342 (accepted risk — ECDSA code path unused, HS256 only); `--ignore-vuln` added with justification
+- [x] **SBOM** — `cyclonedx-py` generates `sbom.json` in CI test job; uploaded as 90-day artifact
+- [x] **Secret scanning** — `gitleaks-action@v2` in CI lint job; `.gitleaks.toml` allowlist for test fixtures and placeholder strings
+- [x] **Penetration test** — `PENTEST.md`: 20 attack vectors tested, 3 findings (F-01 CVE accepted, F-02 fullwidth Unicode open, F-03 HPP low-priority open); auth and Redis key design reviewed
+- [x] **WAF bypass review** — fullwidth Unicode (F-02) and HPP (F-03) documented; NFKC normalisation recommended
+- [x] **Code review sign-off** — JWT (HS256 + exp enforcement), API key (SHA-256 hash, 256-bit entropy), RBAC (no escalation path), Redis keys (no namespace collisions)
 
 ---
 

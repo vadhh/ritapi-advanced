@@ -150,7 +150,7 @@ async def issue_token(
 
     from app.auth.jwt_handler import EXPIRE_MINUTES
     token = create_access_token(subject=body.subject, role=role.name)
-    logger.info(
+    logger.info(  # nosemgrep: python-logger-credential-disclosure
         "Token issued: subject=%s role=%s by=%s",
         body.subject, role.name, caller.get("subject"),
     )
@@ -187,8 +187,10 @@ async def issue_key(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)
         ) from e
 
-    logger.info("API key issued: subject=%s role=%s ttl_days=%s by=%s",
-                body.subject, role.name, body.ttl_days, caller.get("subject"))
+    logger.info(  # nosemgrep: python-logger-credential-disclosure
+        "API key issued: subject=%s role=%s ttl_days=%s by=%s",
+        body.subject, role.name, body.ttl_days, caller.get("subject"),
+    )
     return ApiKeyResponse(
         api_key=raw_key,
         subject=body.subject,
@@ -217,7 +219,7 @@ async def rotate_key(
     # Fetch metadata from the new key to return subject/role
     from app.auth.api_key_handler import validate_api_key
     meta = validate_api_key(new_key) or {}
-    logger.info("API key rotated by=%s", caller.get("subject"))
+    logger.info("API key rotated by=%s", caller.get("subject"))  # nosemgrep: python-logger-credential-disclosure
     return ApiKeyResponse(
         api_key=new_key,
         subject=meta.get("subject", ""),
@@ -236,7 +238,7 @@ async def revoke_key(
     Requires ADMIN+ or a valid ADMIN_SECRET header.
     """
     deleted = revoke_api_key(body.api_key)
-    logger.info("API key revoke by=%s result=%s", caller.get("subject"), deleted)
+    logger.info("API key revoke by=%s result=%s", caller.get("subject"), deleted)  # nosemgrep: python-logger-credential-disclosure
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

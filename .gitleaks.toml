@@ -1,0 +1,25 @@
+# .gitleaks.toml — gitleaks secret scanning configuration
+# https://github.com/gitleaks/gitleaks
+
+[allowlist]
+  description = "Allowlisted test fixtures and documentation patterns"
+  paths = [
+    # Test env values are intentionally placeholder strings, not real secrets
+    '''^tests/conftest\.py$''',
+    # Staging env template uses documented placeholder strings
+    '''^\.env\.staging$''',
+    # Pentest and changelog docs reference example key patterns
+    '''^PENTEST\.md$''',
+    '''^CHANGELOG\.md$''',
+    # YARA rules contain attack payload strings, not secrets
+    '''^rules/.*\.yar$''',
+  ]
+  regexes = [
+    # Placeholder values used in documentation
+    '''REPLACE_WITH_''',
+    # Test-only key values
+    '''test-secret-key-for-unit-tests''',
+    '''test-admin-secret''',
+    '''ci-test-secret-key''',
+    '''ci-admin-secret''',
+  ]
