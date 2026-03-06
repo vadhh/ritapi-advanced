@@ -4,11 +4,9 @@
 #
 # GHCR auth uses the built-in GITHUB_TOKEN — no extra secrets needed for push.
 #
-# Optional secrets (only required for cosign image signing):
-#   COSIGN_PRIVATE_KEY — cosign private key (base64), generated with:
-#                          cosign generate-key-pair
-#   COSIGN_PASSWORD    — passphrase for the cosign key
-#   COSIGN_PUBLIC_KEY  — cosign public key (base64), for verify step
+# No secrets required.
+# Image signing uses cosign keyless mode (Sigstore OIDC via id-token: write).
+# GHCR push uses the built-in GITHUB_TOKEN (packages: write).
 
 name: CI
 
@@ -183,20 +181,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Sign image with cosign
+      - name: Sign image with cosign (keyless / OIDC)
         env:
-          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
-          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
           DIGEST: ${{ needs.build.outputs.image-digest }}
         run: |
           IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"
           echo "Signing: $IMAGE"
-          cosign sign --yes --key env://COSIGN_PRIVATE_KEY "$IMAGE"
+          cosign sign --yes "$IMAGE"
 
-      - name: Verify signature
+      - name: Verify signature (keyless)
         env:
-          COSIGN_PUBLIC_KEY: ${{ secrets.COSIGN_PUBLIC_KEY }}
           DIGEST: ${{ needs.build.outputs.image-digest }}
         run: |
           IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"
-          cosign verify --key env://COSIGN_PUBLIC_KEY "$IMAGE"
+          cosign verify \
+            --certificate-identity-regexp="https://github.com/${{ github.repository }}/*" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+            "$IMAGE"
