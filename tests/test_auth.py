@@ -1,7 +1,6 @@
 """
 Tests for authentication enforcement.
 """
-import pytest
 
 
 UA = "pytest-test-client/1.0"

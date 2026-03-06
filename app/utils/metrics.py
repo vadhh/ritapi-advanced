@@ -6,7 +6,7 @@ Middlewares import what they need directly.
 
 Exposed at GET /metrics (see app/main.py).
 """
-from prometheus_client import Counter, Histogram, Gauge, REGISTRY
+from prometheus_client import Counter, Gauge, Histogram
 
 # ---------------------------------------------------------------------------
 # Counters

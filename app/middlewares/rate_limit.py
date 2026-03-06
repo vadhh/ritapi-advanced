@@ -74,10 +74,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                                 action="block",
                                 detection_type="rate_limit",
                                 score=0.9,
-                                reasons=f"RATE_LIMIT_EXCEEDED ({id_type}): {current}/{RATE_LIMIT} per {RATE_WINDOW}s",
+                                reasons=(
+                                    f"RATE_LIMIT_EXCEEDED ({id_type}): "
+                                    f"{current}/{RATE_LIMIT} per {RATE_WINDOW}s"
+                                ),
                             )
                             rate_limit_hits.labels(identity_type=id_type).inc()
-                            requests_total.labels(method=request.method, action="block", detection_type="rate_limit").inc()
+                            requests_total.labels(
+                                method=request.method, action="block", detection_type="rate_limit"
+                            ).inc()
                             threat_score.observe(0.9)
 
                         return JSONResponse(

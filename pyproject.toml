@@ -73,7 +73,7 @@ ignore = [
     "S106",   # hardcoded passwords in function args
     "B008",   # do not perform function calls in default arguments (FastAPI Depends pattern)
 ]
-per-file-ignores = { "tests/*" = ["S", "E501"] }
+per-file-ignores = { "tests/*" = ["S", "E501"], "app/main.py" = ["E402"], "tests/conftest.py" = ["E402"] }
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]

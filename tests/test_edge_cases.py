@@ -15,6 +15,7 @@ negatives (bypasses), or unexpected behaviour:
   - Extremely nested JSON
 """
 import json
+
 import pytest
 
 UA = "pytest-test-client/1.0"

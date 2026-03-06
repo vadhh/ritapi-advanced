@@ -13,10 +13,8 @@ Only the SHA-256 hash is kept in Redis.
 import hashlib
 import json
 import logging
-import os
 import secrets
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from fastapi import HTTPException, Request, status
 
@@ -44,7 +42,7 @@ def _redis_key(raw_key: str) -> str:
 # Public API
 # ---------------------------------------------------------------------------
 
-def issue_api_key(subject: str, role: str, ttl_seconds: Optional[int] = None) -> str:
+def issue_api_key(subject: str, role: str, ttl_seconds: int | None = None) -> str:
     """
     Generate a new API key, store its hash in Redis, and return the raw key.
 
@@ -67,7 +65,7 @@ def issue_api_key(subject: str, role: str, ttl_seconds: Optional[int] = None) ->
     metadata = json.dumps({
         "role": role,
         "subject": subject,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "expires_in": ttl_seconds,
     })
     rkey = _redis_key(raw_key)
@@ -78,7 +76,7 @@ def issue_api_key(subject: str, role: str, ttl_seconds: Optional[int] = None) ->
     return raw_key
 
 
-def rotate_api_key(old_raw_key: str, ttl_seconds: Optional[int] = None) -> Optional[str]:
+def rotate_api_key(old_raw_key: str, ttl_seconds: int | None = None) -> str | None:
     """
     Atomically revoke an existing key and issue a replacement with the same role/subject.
 
@@ -91,7 +89,7 @@ def rotate_api_key(old_raw_key: str, ttl_seconds: Optional[int] = None) -> Optio
     return issue_api_key(meta["subject"], meta["role"], ttl_seconds=ttl_seconds)
 
 
-def validate_api_key(raw_key: str) -> Optional[dict]:
+def validate_api_key(raw_key: str) -> dict | None:
     """
     Look up an API key by its hash.
 

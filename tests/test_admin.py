@@ -1,7 +1,6 @@
 """
 Tests for admin API — token issuance, API key management.
 """
-import pytest
 
 UA = "pytest-test-client/1.0"
 

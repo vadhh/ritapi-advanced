@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -38,7 +38,7 @@ def log_request(
     All writes are best-effort — a logging failure will never raise to the caller.
     """
     entry = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "client_ip": client_ip,
         "path": path,
         "method": method,

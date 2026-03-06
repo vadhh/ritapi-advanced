@@ -10,14 +10,11 @@ Thresholds (from exfiltration_detection.py):
   LARGE_RESPONSE_BYTES      = 1MB  → monitor (not block)
   VOLUME_THRESHOLD_BYTES    = 10MB → monitor (not block)
 """
-import pytest
 from app.middlewares.exfiltration_detection import (
     BULK_ACCESS_THRESHOLD,
-    BULK_ACCESS_WINDOW,
     CRAWL_ENDPOINT_THRESHOLD,
     LARGE_RESPONSE_BYTES,
     VOLUME_THRESHOLD_BYTES,
-    VOLUME_WINDOW,
     _incr,
     _incrby,
     _sadd_count,
@@ -85,7 +82,7 @@ def test_bulk_access_triggers_block(client, redis):
     # does not interfere before the exfiltration threshold is reached.
     headers = {"User-Agent": "pytest/1.0"}
     blocked = False
-    for i in range(BULK_ACCESS_THRESHOLD + 5):
+    for _ in range(BULK_ACCESS_THRESHOLD + 5):
         resp = client.get("/healthz", headers=headers)
         if resp.status_code == 403:
             data = resp.json()

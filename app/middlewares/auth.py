@@ -75,7 +75,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # 3. Reject if no valid credential
         if claims is None:
-            logger.warning("Auth: rejected %s %s from %s (method=%s)", request.method, path, ip, auth_method)
+            logger.warning(
+                "Auth: rejected %s %s from %s (method=%s)", request.method, path, ip, auth_method
+            )
             auth_failures.labels(method=auth_method).inc()
             log_request(
                 client_ip=ip,
@@ -89,7 +91,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return JSONResponse(
                 {
                     "error": "Unauthorized",
-                    "detail": "Provide a valid Bearer token (Authorization: Bearer <jwt>) or API key (X-API-Key: <key>)",
+                    "detail": (
+                        "Provide a valid Bearer token (Authorization: Bearer <jwt>)"
+                        " or API key (X-API-Key: <key>)"
+                    ),
                 },
                 status_code=401,
                 headers={"WWW-Authenticate": "Bearer"},

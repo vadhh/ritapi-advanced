@@ -9,6 +9,7 @@ Bot detection bypass IPs (from conftest): 127.0.0.1, ::1, testclient.
 Integration tests use 10.99.bot.X IPs which are NOT bypassed.
 """
 import pytest
+
 from app.middlewares.bot_detection import (
     BLOCK_THRESHOLD,
     RULES,
@@ -16,7 +17,6 @@ from app.middlewares.bot_detection import (
     _detect,
     _is_suspicious_ua,
 )
-from app.auth.jwt_handler import create_access_token
 
 # Unique IP prefix for bot detection tests — not in bypass list
 _IP = "10.99.bot.{}"
