@@ -6,8 +6,7 @@ to a named route based on path prefix + HTTP method matching.
 """
 import logging
 import os
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 import yaml
 
@@ -25,7 +24,7 @@ class Route:
     path_prefix: str
     methods: list[str]
     upstream: str
-    policy: Optional[str] = None
+    policy: str | None = None
 
 
 _routes: list[Route] = []
@@ -63,7 +62,7 @@ def _load_routes() -> None:
         _loaded = True
 
 
-def resolve_route(path: str, method: str) -> Optional[Route]:
+def resolve_route(path: str, method: str) -> Route | None:
     """
     Resolve a request path + method to a Route.
 

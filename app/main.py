@@ -22,9 +22,9 @@ from app.web.dashboard import router as dashboard_router
 app = FastAPI(title="RitAPI Advanced", version="0.1.0")
 
 # Middleware stack — last add_middleware() runs first on incoming requests.
-# Request order:  RateLimit → Auth → SchemaEnforcement → Bot → Injection → Exfiltration → DecisionEngine → route
+# Request order:  RateLimit → Auth → Schema → Bot → Injection → Exfil → Engine → route
 # Response order: reversed.
-app.add_middleware(DecisionEngineMiddleware)        # innermost: unified block gate + route/policy resolver
+app.add_middleware(DecisionEngineMiddleware)        # innermost: block gate + policy
 app.add_middleware(ExfiltrationDetectionMiddleware)
 app.add_middleware(InjectionDetectionMiddleware)
 app.add_middleware(BotDetectionMiddleware)

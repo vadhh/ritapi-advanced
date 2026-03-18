@@ -27,7 +27,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.policies.service import Policy, get_policy
+from app.policies.service import get_policy
 from app.routing.service import resolve_route
 from app.utils.logging import log_request
 

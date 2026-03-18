@@ -13,7 +13,6 @@ Each policy file defines:
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Optional
 
 import yaml
 
@@ -43,7 +42,7 @@ class RateLimitPolicy:
 @dataclass
 class SchemaPolicy:
     enabled: bool = False
-    schema: Optional[str] = None
+    schema: str | None = None
 
 
 @dataclass
@@ -141,7 +140,7 @@ def _load_policies() -> None:
     logger.info("Loaded %d policies from %s", len(_policies), policies_dir)
 
 
-def get_policy(name: Optional[str]) -> Policy:
+def get_policy(name: str | None) -> Policy:
     """
     Return a policy by name. Returns DEFAULT_POLICY if name is None or not found.
     """
