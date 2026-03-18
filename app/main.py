@@ -15,18 +15,20 @@ from app.middlewares.decision_engine import DecisionEngineMiddleware
 from app.middlewares.exfiltration_detection import ExfiltrationDetectionMiddleware
 from app.middlewares.injection_detection import InjectionDetectionMiddleware
 from app.middlewares.rate_limit import RateLimitMiddleware
+from app.middlewares.schema_enforcement import SchemaEnforcementMiddleware
 from app.web.admin import router as admin_router
 from app.web.dashboard import router as dashboard_router
 
 app = FastAPI(title="RitAPI Advanced", version="0.1.0")
 
 # Middleware stack — last add_middleware() runs first on incoming requests.
-# Request order:  RateLimit → Auth → Bot → Injection → Exfiltration → DecisionEngine → route
+# Request order:  RateLimit → Auth → SchemaEnforcement → Bot → Injection → Exfiltration → DecisionEngine → route
 # Response order: reversed.
-app.add_middleware(DecisionEngineMiddleware)        # innermost: unified block gate
+app.add_middleware(DecisionEngineMiddleware)        # innermost: unified block gate + route/policy resolver
 app.add_middleware(ExfiltrationDetectionMiddleware)
 app.add_middleware(InjectionDetectionMiddleware)
 app.add_middleware(BotDetectionMiddleware)
+app.add_middleware(SchemaEnforcementMiddleware)     # after auth, validates body per policy
 app.add_middleware(AuthMiddleware)                  # after rate limit, before WAF
 app.add_middleware(RateLimitMiddleware)             # outermost: catches floods before auth
 

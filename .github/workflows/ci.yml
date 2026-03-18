@@ -104,6 +104,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Validate YAML configs
+        run: python -c "import yaml; yaml.safe_load(open('configs/routing.yml')); [yaml.safe_load(open(f'configs/policies/{p}.yml')) for p in ('auth','payment','admin')]"
+
       - name: Run tests with coverage
         env:
           REDIS_URL: redis://localhost:6379/1

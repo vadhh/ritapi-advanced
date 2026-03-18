@@ -63,6 +63,55 @@ Initial production-ready release.
 
 ---
 
+## [1.1.0] — 2026-03-18
+
+Policy-driven routing and enforcement release.
+
+### Added
+
+**Policy-driven architecture**
+- `configs/routing.yml` — YAML-based multi-route definitions with path prefix, HTTP methods, upstream backends, and policy assignment
+- `configs/policies/{auth,payment,admin}.yml` — per-route policy files defining auth requirements, rate limits, schema enforcement, and decision actions
+- `app/routing/service.py` — route resolver with longest-prefix-first matching, lazy loading, and hot-reload support
+- `app/policies/service.py` — policy loader with typed dataclasses (`AuthPolicy`, `RateLimitPolicy`, `SchemaPolicy`, `DecisionActions`)
+
+**Per-route enforcement**
+- `SchemaEnforcementMiddleware` — validates request bodies against named Pydantic schemas based on route policy; dynamically resolves schema classes
+- `PaymentPayload` schema — strict validation for payment endpoints (amount, currency, recipient)
+- `AuthMiddleware` now reads `policy.auth.jwt` / `policy.auth.api_key` to enable/disable auth methods per route
+- `RateLimitMiddleware` now reads `policy.rate_limit.requests` / `window_seconds` for per-route rate limits
+- `DecisionEngineMiddleware` rewritten to resolve route → load policy → process detections with 4 action types
+
+**Decision actions**
+- `allow` — pass through silently
+- `monitor` — pass through with structured logging
+- `throttle` — pass through with rate reduction marker
+- `block` — return 403 Forbidden
+
+**Production safety**
+- `scripts/backup.sh` — pg_dump + /etc/ritapi config + log archival + 30-backup retention with metadata
+- `scripts/restore.sh` — database restore + config restore + service lifecycle management
+- `DEPLOYMENT_STATES.md` — 5-state lifecycle (INSTALL → SETUP → MONITOR → ENFORCE → ROLLBACK) with entry/exit criteria
+- `GO_LIVE_CHECKLIST.md` — 47 items across infrastructure, product, and security sections with sign-off table
+- `minifw-ai.service` — systemd unit with full sandboxing (NoNewPrivileges, ProtectSystem=strict, ProtectHome, PrivateTmp)
+
+**Infrastructure**
+- HSTS header enabled in `nginx.conf`
+- `PyYAML>=6.0.0` added to dependencies
+- Routing/policy env vars (`ROUTING_CONFIG_PATH`, `POLICIES_DIR`) added to env template, Dockerfile, Docker Compose, and Helm chart
+- `.deb` packaging updated: conffiles include routing/policy configs, postinst deploys configs to `/etc/ritapi-advanced/`
+- CI pipeline validates YAML configs before test run
+- Helm chart bumped to 1.1.0 with routing/policy ConfigMap entries
+
+### Changed
+- `DecisionEngineMiddleware` — rewritten from simple block-flag gate to full route-aware policy engine
+- `AuthMiddleware` — now policy-configurable (previously global enforcement)
+- `RateLimitMiddleware` — now reads per-route limits from policy (previously single global limit)
+- `DEBIAN/control` — added `postgresql` to Recommends
+- `DEBIAN/postinst` — installs routing.yml and policy files to `/etc/ritapi-advanced/`
+- `DEBIAN/prerm` — stops MiniFW-AI service on removal
+- `DEBIAN/postrm` — cleans up policy configs and backups on purge
+
 ## [Unreleased]
 
 _Nothing yet._

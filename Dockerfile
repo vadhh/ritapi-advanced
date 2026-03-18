@@ -51,6 +51,7 @@ WORKDIR /app
 # Copy application source
 COPY --chown=ritapi:ritapi app/ ./app/
 COPY --chown=ritapi:ritapi rules/ ./rules/
+COPY --chown=ritapi:ritapi configs/ ./configs/
 
 # Writable log directory (mounted as volume in production)
 VOLUME ["/var/log/ritapi"]
@@ -58,7 +59,9 @@ VOLUME ["/var/log/ritapi"]
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     LOG_PATH=/var/log/ritapi/ritapi_advanced.jsonl \
-    YARA_RULES_DIR=/app/rules
+    YARA_RULES_DIR=/app/rules \
+    ROUTING_CONFIG_PATH=/app/configs/routing.yml \
+    POLICIES_DIR=/app/configs/policies
 
 EXPOSE 8001
 

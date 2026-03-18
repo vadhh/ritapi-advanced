@@ -1,3 +1,14 @@
+"""
+Rate Limit Middleware.
+
+Per-IP and per-API-key Redis-backed rate limiting. When a per-route policy is
+available (set by DecisionEngine on request.state.policy), the rate limit and
+window are taken from the policy. Otherwise falls back to global env var defaults.
+
+Policy-driven behavior:
+  - policy.rate_limit.requests  → max requests per window for this route
+  - policy.rate_limit.window_seconds → window duration in seconds
+"""
 import logging
 import os
 
@@ -11,6 +22,7 @@ from app.utils.redis_client import RedisClientSingleton
 
 logger = logging.getLogger(__name__)
 
+# Global defaults (used when no per-route policy is set)
 RATE_LIMIT = int(os.getenv("RATE_LIMIT_REQUESTS", "100"))
 RATE_WINDOW = int(os.getenv("RATE_LIMIT_WINDOW", "60"))
 
@@ -38,6 +50,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if any(path.startswith(p) for p in _SKIP_PREFIXES):
             return await call_next(request)
 
+        # Read per-route policy if available
+        policy = getattr(request.state, "policy", None)
+        if policy is not None:
+            rate_limit = policy.rate_limit.requests
+            rate_window = policy.rate_limit.window_seconds
+        else:
+            rate_limit = RATE_LIMIT
+            rate_window = RATE_WINDOW
+
         client_ip = _get_client_ip(request)
         api_key = request.headers.get("x-api-key", "")
 
@@ -57,16 +78,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 try:
                     current = redis.incr(rate_key)
                     if current == 1:
-                        redis.expire(rate_key, RATE_WINDOW)
+                        redis.expire(rate_key, rate_window)
 
-                    if current > RATE_LIMIT:
+                    if current > rate_limit:
                         if not redis.exists(log_key):
                             identity_label = client_ip if id_type == "ip" else f"key:{api_key[:8]}…"
                             logger.warning(
                                 "Rate limit exceeded for %s %s: %d/%d (window %ds)",
-                                id_type, identity_label, current, RATE_LIMIT, RATE_WINDOW,
+                                id_type, identity_label, current, rate_limit, rate_window,
                             )
-                            redis.setex(log_key, RATE_WINDOW, "1")
+                            redis.setex(log_key, rate_window, "1")
                             log_request(
                                 client_ip=client_ip,
                                 path=path,
@@ -76,7 +97,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                                 score=0.9,
                                 reasons=(
                                     f"RATE_LIMIT_EXCEEDED ({id_type}): "
-                                    f"{current}/{RATE_LIMIT} per {RATE_WINDOW}s"
+                                    f"{current}/{rate_limit} per {rate_window}s"
                                 ),
                             )
                             rate_limit_hits.labels(identity_type=id_type).inc()
@@ -88,7 +109,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                         return JSONResponse(
                             {
                                 "error": "Too Many Requests",
-                                "detail": f"Rate limit exceeded ({RATE_LIMIT}/{RATE_WINDOW}s)",
+                                "detail": f"Rate limit exceeded ({rate_limit}/{rate_window}s)",
                             },
                             status_code=429,
                         )

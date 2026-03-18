@@ -92,3 +92,11 @@ class GenericDataPayload(BaseRequest):
     Use a specific schema whenever the expected shape is known.
     """
     data: dict[str, Any]
+
+
+class PaymentPayload(BasePayload):
+    """Schema for payment-related endpoints (enforced per-route via policy)."""
+    amount: float
+    currency: str
+    recipient: str
+    reference: str | None = None

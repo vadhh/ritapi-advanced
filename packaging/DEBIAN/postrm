@@ -13,6 +13,15 @@ case "$1" in
 
         # Remove log directory (data loss — only on purge)
         rm -rf /var/log/ritapi
+
+        # Remove routing and policy configs
+        rm -rf /etc/ritapi-advanced
+
+        # Remove backups (data loss — only on purge)
+        rm -rf /var/backups/ritapi
+
+        # Remove MiniFW-AI service unit if installed
+        rm -f /lib/systemd/system/minifw-ai.service
         ;;
 
     remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)

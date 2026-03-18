@@ -1,13 +1,18 @@
 """
 Authentication Middleware.
 
-Enforces JWT (Authorization: Bearer) or API key (X-API-Key) on every request
-except the bypass list. On success, attaches claims to request.state.claims so
-that downstream RBAC dependencies can read them without re-validating.
+Enforces JWT (Authorization: Bearer) or API key (X-API-Key) based on the
+per-route policy loaded by the DecisionEngine. When no policy is set or the
+route is bypassed, auth is skipped.
 
-Bypass paths (no auth required):
+Policy-driven behavior:
+  - policy.auth.jwt = true  → accept JWT Bearer tokens
+  - policy.auth.api_key = true → accept X-API-Key headers
+  - Both false → auth is skipped for this route
+
+Bypass paths (no auth regardless of policy):
   /healthz        — liveness probe
-  /metrics        — Prometheus scrape (network-level access control recommended)
+  /metrics        — Prometheus scrape
   /dashboard*     — dashboard UI (add auth guard separately if needed)
 """
 import logging
@@ -48,6 +53,23 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if _is_bypassed(path):
             return await call_next(request)
 
+        # Read policy from request state (set by DecisionEngine, which runs innermost
+        # but add_middleware order means it's added first — so it actually dispatches
+        # after this middleware). If policy is not yet available, fall back to
+        # requiring both JWT and API key (safe default).
+        policy = getattr(request.state, "policy", None)
+
+        # Determine which auth methods this route accepts
+        accept_jwt = True
+        accept_api_key = True
+        if policy is not None:
+            accept_jwt = policy.auth.jwt
+            accept_api_key = policy.auth.api_key
+
+        # If the policy disables both auth methods, skip auth entirely
+        if not accept_jwt and not accept_api_key:
+            return await call_next(request)
+
         ip = (
             (request.headers.get("x-forwarded-for", "").split(",")[0].strip())
             or (request.client.host if request.client else "unknown")
@@ -57,15 +79,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
         auth_method = "missing"
 
         # 1. Try JWT Bearer
-        token = get_token_from_request(request)
-        if token:
-            auth_method = "jwt"
-            claims = verify_token(token)
-            if claims is None:
-                logger.debug("Auth: invalid/expired JWT from %s on %s", ip, path)
+        if accept_jwt:
+            token = get_token_from_request(request)
+            if token:
+                auth_method = "jwt"
+                claims = verify_token(token)
+                if claims is None:
+                    logger.debug("Auth: invalid/expired JWT from %s on %s", ip, path)
 
         # 2. Fall back to API key
-        if claims is None:
+        if claims is None and accept_api_key:
             raw_key = request.headers.get("x-api-key", "").strip()
             if raw_key:
                 auth_method = "api_key"

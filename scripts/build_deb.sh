@@ -107,16 +107,22 @@ echo "==> Venv size: $(du -sh "$APP_DEST/.venv" | cut -f1)"
 # ---------------------------------------------------------------------------
 # 5. Install config template to /etc/ritapi-advanced/
 # ---------------------------------------------------------------------------
-mkdir -p "$STAGING/etc/ritapi-advanced"
+mkdir -p "$STAGING/etc/ritapi-advanced/policies"
 cp "$REPO_ROOT/packaging/etc/ritapi-advanced/env" \
    "$STAGING/etc/ritapi-advanced/env"
+cp "$REPO_ROOT/configs/routing.yml" \
+   "$STAGING/etc/ritapi-advanced/routing.yml"
+cp "$REPO_ROOT/configs/policies/"*.yml \
+   "$STAGING/etc/ritapi-advanced/policies/"
 
 # ---------------------------------------------------------------------------
-# 6. Install systemd unit to /lib/systemd/system/
+# 6. Install systemd units to /lib/systemd/system/
 # ---------------------------------------------------------------------------
 mkdir -p "$STAGING/lib/systemd/system"
 cp "$REPO_ROOT/packaging/lib/systemd/system/ritapi-advanced.service" \
    "$STAGING/lib/systemd/system/ritapi-advanced.service"
+cp "$REPO_ROOT/packaging/lib/systemd/system/minifw-ai.service" \
+   "$STAGING/lib/systemd/system/minifw-ai.service"
 
 # ---------------------------------------------------------------------------
 # 7. Install docs to /usr/share/doc/ritapi-advanced/

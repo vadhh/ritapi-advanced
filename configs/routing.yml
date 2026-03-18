@@ -1,0 +1,49 @@
+# RitAPI Advanced — Route Definitions
+#
+# Each route maps a path prefix + HTTP methods to a named service
+# and its associated policy file.
+#
+# Deploy to /etc/ritapi/routing.yml
+
+routes:
+  - name: auth
+    path_prefix: /api/auth
+    methods: [POST, GET]
+    upstream: http://127.0.0.1:8001
+    policy: auth
+
+  - name: payment
+    path_prefix: /api/payment
+    methods: [POST, GET, PUT]
+    upstream: http://127.0.0.1:8002
+    policy: payment
+
+  - name: admin
+    path_prefix: /admin
+    methods: [GET, POST, PUT, DELETE]
+    upstream: http://127.0.0.1:8001
+    policy: admin
+
+  - name: dashboard
+    path_prefix: /dashboard
+    methods: [GET]
+    upstream: http://127.0.0.1:8001
+    policy: null
+
+  - name: health
+    path_prefix: /healthz
+    methods: [GET]
+    upstream: http://127.0.0.1:8001
+    policy: null
+
+  - name: metrics
+    path_prefix: /metrics
+    methods: [GET]
+    upstream: http://127.0.0.1:8001
+    policy: null
+
+  - name: default
+    path_prefix: /
+    methods: [GET, POST, PUT, PATCH, DELETE]
+    upstream: http://127.0.0.1:8001
+    policy: auth

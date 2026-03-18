@@ -1,0 +1,20 @@
+# Policy: admin
+# Admin endpoints — strict auth, moderate rate limiting.
+
+auth:
+  jwt: true
+  api_key: true
+
+rate_limit:
+  requests: 50
+  window_seconds: 60
+
+schema_enforcement:
+  enabled: false
+
+decision_actions:
+  on_auth_failure: block
+  on_rate_limit: block
+  on_injection: block
+  on_bot_detection: block
+  on_exfiltration: monitor

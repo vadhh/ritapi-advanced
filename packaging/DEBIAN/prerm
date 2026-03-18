@@ -9,6 +9,14 @@ case "$1" in
         if systemctl is-enabled --quiet ritapi-advanced.service 2>/dev/null; then
             systemctl disable ritapi-advanced.service
         fi
+
+        # Stop MiniFW-AI if managed by this package
+        if systemctl is-active --quiet minifw-ai.service 2>/dev/null; then
+            systemctl stop minifw-ai.service
+        fi
+        if systemctl is-enabled --quiet minifw-ai.service 2>/dev/null; then
+            systemctl disable minifw-ai.service
+        fi
         ;;
 
     failed-upgrade)

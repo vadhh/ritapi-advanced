@@ -25,6 +25,8 @@ config:
   # Comma-separated IPs exempt from bot detection (add monitoring IPs here)
   botDetectionBypassIps: "127.0.0.1,::1"
   env: production
+  routingConfigPath: /app/configs/routing.yml
+  policiesDir: /app/configs/policies
 
 # ---------------------------------------------------------------------------
 # Secrets — provide via --set or an external secrets manager.

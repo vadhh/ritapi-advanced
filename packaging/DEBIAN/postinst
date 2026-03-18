@@ -17,8 +17,27 @@ case "$1" in
         chown ritapi:ritapi /var/log/ritapi
         chmod 750 /var/log/ritapi
 
+        # Create backup directory
+        mkdir -p /var/backups/ritapi
+        chown ritapi:ritapi /var/backups/ritapi
+        chmod 750 /var/backups/ritapi
+
         # Set ownership on app directory
         chown -R ritapi:ritapi /opt/ritapi-advanced
+
+        # Install routing and policy configs (conffiles — dpkg preserves edits)
+        mkdir -p /etc/ritapi-advanced/policies
+        if [ ! -f /etc/ritapi-advanced/routing.yml ]; then
+            cp /opt/ritapi-advanced/configs/routing.yml \
+               /etc/ritapi-advanced/routing.yml
+        fi
+        for policy in auth payment admin; do
+            if [ ! -f "/etc/ritapi-advanced/policies/${policy}.yml" ]; then
+                cp "/opt/ritapi-advanced/configs/policies/${policy}.yml" \
+                   "/etc/ritapi-advanced/policies/${policy}.yml"
+            fi
+        done
+        chown -R ritapi:ritapi /etc/ritapi-advanced
 
         # Install logrotate config
         if [ -f /opt/ritapi-advanced/scripts/logrotate.conf ]; then
@@ -26,9 +45,14 @@ case "$1" in
                /etc/logrotate.d/ritapi-advanced
         fi
 
-        # Reload systemd and enable the service
+        # Reload systemd and enable services
         systemctl daemon-reload
         systemctl enable ritapi-advanced.service
+
+        # Enable MiniFW-AI service if present (don't fail if not installed)
+        if [ -f /lib/systemd/system/minifw-ai.service ]; then
+            systemctl enable minifw-ai.service 2>/dev/null || true
+        fi
 
         # Don't auto-start — user must configure /etc/ritapi-advanced/env first
         echo ""
@@ -36,8 +60,10 @@ case "$1" in
         echo ""
         echo "Next steps:"
         echo "  1. Edit /etc/ritapi-advanced/env (set SECRET_KEY, ADMIN_SECRET, REDIS_URL)"
-        echo "  2. Start: sudo systemctl start ritapi-advanced"
-        echo "  3. Validate: sudo bash /opt/ritapi-advanced/scripts/validate_install.sh"
+        echo "  2. Review routing:  /etc/ritapi-advanced/routing.yml"
+        echo "  3. Review policies: /etc/ritapi-advanced/policies/*.yml"
+        echo "  4. Start: sudo systemctl start ritapi-advanced"
+        echo "  5. Validate: sudo bash /opt/ritapi-advanced/scripts/validate_install.sh"
         echo ""
         ;;
 

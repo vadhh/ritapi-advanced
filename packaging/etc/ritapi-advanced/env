@@ -23,10 +23,16 @@ JWT_ALGORITHM=HS256
 JWT_EXPIRE_MINUTES=60
 
 # ---------------------------------------------------------------------------
-# Rate limiting
+# Rate limiting (global defaults — per-route overrides in policies/*.yml)
 # ---------------------------------------------------------------------------
 RATE_LIMIT_REQUESTS=100
 RATE_LIMIT_WINDOW=60
+
+# ---------------------------------------------------------------------------
+# Routing & policies
+# ---------------------------------------------------------------------------
+ROUTING_CONFIG_PATH=/etc/ritapi-advanced/routing.yml
+POLICIES_DIR=/etc/ritapi-advanced/policies
 
 # ---------------------------------------------------------------------------
 # Bot detection — bypass IPs (comma-separated, add monitoring agent IPs)
