@@ -63,7 +63,7 @@ pluggy==1.6.0
     #   pytest-cov
 prometheus-client==0.24.1
     # via -r /home/stardhoom/ritapi-advanced/requirements.txt
-pyasn1==0.6.2
+pyasn1==0.6.3
     # via
     #   python-jose
     #   rsa
