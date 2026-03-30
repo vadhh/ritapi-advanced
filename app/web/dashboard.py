@@ -32,13 +32,13 @@ _DEFAULT_TAIL = 200  # lines to read from end of log
 
 # Optional dashboard access token. If set, all /dashboard routes require
 # Authorization: Bearer <DASHBOARD_TOKEN>.  Leave unset to keep dashboard open.
-_DASHBOARD_TOKEN: str = os.getenv("DASHBOARD_TOKEN", "")
+_DASHBOARD_TOKEN: str | None = os.getenv("DASHBOARD_TOKEN")
 
 
 def _require_dashboard_access(request: Request) -> None:
     """Dependency: enforce DASHBOARD_TOKEN if configured."""
-    if not _DASHBOARD_TOKEN:
-        return  # open access
+    if _DASHBOARD_TOKEN is None:
+        return  # open access — DASHBOARD_TOKEN not set
     auth = request.headers.get("authorization", "")
     token = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
     if not hmac.compare_digest(token, _DASHBOARD_TOKEN):

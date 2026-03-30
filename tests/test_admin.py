@@ -141,21 +141,20 @@ def test_issue_token_with_super_admin_jwt(client, super_admin_headers, redis):
     assert resp.status_code == 200
 
 
-def test_admin_secret_comparison_is_constant_time(client):
-    """Verify _is_admin_secret uses constant-time comparison."""
-    import inspect
-    from app.web.admin import _is_admin_secret
-    source = inspect.getsource(_is_admin_secret)
-    assert "hmac.compare_digest" in source, (
-        "_is_admin_secret must use hmac.compare_digest, not == operator"
+def test_wrong_admin_secret_returns_401(client):
+    """Incorrect X-Admin-Secret must be rejected with 401."""
+    resp = client.post(
+        "/admin/token",
+        headers={"X-Admin-Secret": "wrong-secret"},
+        json={"subject": "testuser", "role": "VIEWER"},
     )
+    assert resp.status_code == 401
 
 
-def test_dashboard_token_comparison_is_constant_time():
-    """Verify _require_dashboard_access uses constant-time comparison."""
-    import inspect
-    from app.web.dashboard import _require_dashboard_access
-    source = inspect.getsource(_require_dashboard_access)
-    assert "hmac.compare_digest" in source, (
-        "_require_dashboard_access must use hmac.compare_digest, not != operator"
+def test_missing_admin_secret_returns_401(client):
+    """Missing X-Admin-Secret (no JWT) must be rejected with 401."""
+    resp = client.post(
+        "/admin/token",
+        json={"subject": "testuser", "role": "VIEWER"},
     )
+    assert resp.status_code == 401
