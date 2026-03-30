@@ -53,7 +53,7 @@ dev = [
 ]
 
 [project.scripts]
-ritapi = "app.main:app"
+ritapi = "app.main:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -2,6 +2,8 @@
 RitAPI Advanced — API & IP Protection System
 Entry point for the FastAPI application.
 """
+import os
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -58,3 +60,12 @@ def metrics():
             pass
 
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+def main() -> None:
+    """Entry point for the ``ritapi`` CLI command."""
+    import uvicorn
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "8000"))
+    log_level = os.getenv("LOG_LEVEL", "info")
+    uvicorn.run("app.main:app", host=host, port=port, log_level=log_level)
