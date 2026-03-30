@@ -109,7 +109,7 @@ jobs:
 
       - name: Run tests with coverage
         env:
-          REDIS_URL: redis://localhost:6379/1
+          REDIS_URL: redis://localhost:6379/15
           SECRET_KEY: ci-test-secret-key-not-for-production
           JWT_ALGORITHM: HS256
           JWT_EXPIRE_MINUTES: "60"

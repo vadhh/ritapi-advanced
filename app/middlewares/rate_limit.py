@@ -30,7 +30,6 @@ RATE_WINDOW = int(os.getenv("RATE_LIMIT_WINDOW", "60"))
 # Paths that bypass rate limiting entirely
 _SKIP_PREFIXES = (
     "/healthz",
-    "/readyz",
     "/metrics",
     "/docs",
     "/openapi",
