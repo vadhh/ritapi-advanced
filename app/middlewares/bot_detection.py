@@ -209,6 +209,27 @@ class BotDetectionMiddleware(BaseHTTPMiddleware):
         except ValueError:
             payload_size = 0
 
+        # --- Pre-request block: if prior cumulative risk >= threshold, block immediately ---
+        redis_pre = RedisClientSingleton.get_client()
+        if redis_pre is not None:
+            try:
+                existing_risk = int(redis_pre.get(f"bot:risk:{ip}") or 0)
+                if existing_risk >= BLOCK_THRESHOLD:
+                    logger.warning(
+                        "Bot pre-block %s on %s — cumulative risk %d >= %d",
+                        ip, path, existing_risk, BLOCK_THRESHOLD,
+                    )
+                    bot_blocks.inc()
+                    requests_total.labels(
+                        method=method, action="block", detection_type="bot:pre_block"
+                    ).inc()
+                    return JSONResponse(
+                        {"error": "Forbidden", "detail": "Automated request detected"},
+                        status_code=403,
+                    )
+            except Exception:
+                pass  # fail-open: let request through if Redis check fails
+
         # Let the request proceed to get the response status code
         response = await call_next(request)
         status_code = response.status_code

@@ -266,3 +266,15 @@ def test_clean_request_not_blocked(client, redis):
         headers={"X-Forwarded-For": "10.99.bot.200", "User-Agent": _UA},
     )
     assert resp.status_code == 200
+
+
+def test_bot_blocked_before_route_executes(flush_test_redis):
+    """Block threshold check must appear BEFORE call_next in dispatch."""
+    import inspect
+    from app.middlewares.bot_detection import BotDetectionMiddleware
+    source = inspect.getsource(BotDetectionMiddleware.dispatch)
+    call_next_pos = source.index("response = await call_next")
+    block_threshold_pos = source.index("BLOCK_THRESHOLD")
+    assert block_threshold_pos < call_next_pos, (
+        "BLOCK_THRESHOLD check must appear BEFORE response = await call_next in dispatch()"
+    )
