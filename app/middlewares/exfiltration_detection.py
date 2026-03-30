@@ -55,10 +55,17 @@ def _incr(redis, key: str, ttl: int) -> int:
 
 
 def _incrby(redis, key: str, amount: int, ttl: int) -> int:
-    val = redis.incrby(key, amount)
-    if val == amount:  # first write
-        redis.expire(key, ttl)
-    return val
+    """Increment key by amount, setting TTL only if not already set (atomic via pipeline).
+
+    Uses EXPIRE key ttl NX to set TTL atomically only on first write, eliminating
+    the race condition from checking `if val == amount` with variable byte amounts.
+    Requires Redis 7+ for NX support.
+    """
+    pipe = redis.pipeline()
+    pipe.incrby(key, amount)
+    pipe.expire(key, ttl, nx=True)  # NX: set only if no TTL exists — Redis 7+
+    results = pipe.execute()
+    return results[0]
 
 
 def _sadd_count(redis, key: str, member: str, ttl: int) -> int:

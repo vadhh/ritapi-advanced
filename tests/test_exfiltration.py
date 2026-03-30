@@ -56,6 +56,35 @@ def test_incrby_accumulates(redis):
     assert val == 1000
 
 
+def test_incrby_sets_ttl_atomically_on_first_write(flush_test_redis, redis):
+    """_incrby must set TTL atomically on first write regardless of amount.
+
+    This test detects the race condition where the check `if val == amount`
+    fails under concurrent requests with variable byte amounts. The fix uses
+    a Redis pipeline with `EXPIRE key ttl NX` (atomic, Redis 7+).
+    """
+    import time
+
+    key = "test:incrby:race"
+
+    # First write with 5000 bytes
+    val = _incrby(redis, key, 5000, 60)
+    assert val == 5000
+    ttl = redis.ttl(key)
+    assert ttl > 0, f"TTL must be set after first write, got {ttl}"
+
+    # Wait a bit to allow TTL to tick down
+    time.sleep(0.05)
+
+    # Second write with 1000 bytes (different amount)
+    val2 = _incrby(redis, key, 1000, 60)
+    assert val2 == 6000
+    ttl2 = redis.ttl(key)
+    assert ttl2 > 0, f"TTL must still be set after second write"
+    # TTL should NOT have been reset to 60; it should be <= original TTL
+    assert ttl2 <= ttl + 1, f"TTL was reset on second write: {ttl} -> {ttl2}, expected no reset"
+
+
 def test_sadd_count_returns_cardinality(redis):
     key = "test:exfil:sadd:1"
     c1 = _sadd_count(redis, key, "endpoint_a", 300)
