@@ -27,6 +27,7 @@ import os
 import time
 
 import redis
+from app.utils.metrics import redis_connected
 from redis.backoff import ExponentialBackoff
 from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
@@ -116,10 +117,12 @@ class RedisClientSingleton:
         apparently-live client just produced a connection error.
         """
         if cls._instance is not None:
+            redis_connected.set(1)
             return cls._instance
 
         now = time.monotonic()
         if (now - cls._last_failure) < _COOLDOWN_SECONDS:
+            redis_connected.set(0)
             return None  # still cooling down — don't hammer Redis
 
         # Attempt (re)connection
@@ -130,10 +133,12 @@ class RedisClientSingleton:
             cls._instance = client
             cls._last_failure = 0.0
             cls._failure_logged = False
+            redis_connected.set(1)
             logger.info("Redis connected successfully.")
         except Exception as exc:
             cls._instance = None
             cls._last_failure = time.monotonic()
+            redis_connected.set(0)
             if not cls._failure_logged:
                 logger.warning(
                     "Redis unavailable (retrying in %.0fs): %s. "
@@ -163,6 +168,7 @@ class RedisClientSingleton:
         cls._instance = None
         cls._last_failure = time.monotonic()
         cls._failure_logged = False
+        redis_connected.set(0)
         logger.warning("Redis client marked as failed — will reconnect after cooldown.")
 
     @classmethod

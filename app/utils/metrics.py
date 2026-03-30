@@ -82,3 +82,8 @@ active_bot_risk_ips = Gauge(
     "ritapi_active_bot_risk_ips",
     "Current number of IPs with a non-zero bot risk score in Redis",
 )
+
+redis_connected = Gauge(
+    "ritapi_redis_connected",
+    "1 if Redis is reachable, 0 if the client is in fail-open mode",
+)

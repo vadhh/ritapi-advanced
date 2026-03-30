@@ -119,7 +119,7 @@ groups:
       # -----------------------------------------------------------------------
       - alert: RitAPIInjectionSurge
         expr: >
-          rate(ritapi_injections_total[5m]) > 3
+          rate(ritapi_injection_blocks_total[5m]) > 3
         for: 3m
         labels:
           severity: warning
@@ -136,7 +136,7 @@ groups:
       # -----------------------------------------------------------------------
       - alert: RitAPIExfiltrationBlock
         expr: >
-          rate(ritapi_exfil_blocks_total[10m]) > 1
+          rate(ritapi_exfiltration_alerts_total[10m]) > 1
         for: 5m
         labels:
           severity: critical
@@ -155,18 +155,18 @@ groups:
       - alert: RitAPIHighLatency
         expr: >
           histogram_quantile(0.99,
-            rate(ritapi_request_duration_seconds_bucket[5m])
-          ) > 1.0
+            rate(ritapi_threat_score_bucket[5m])
+          ) > 0.9
         for: 5m
         labels:
           severity: warning
           team: platform
         annotations:
-          summary: "RitAPI p99 latency >1s"
+          summary: "RitAPI p99 threat score elevated"
           description: >
-            p99 response latency on {{ $labels.instance }} has exceeded 1 second
-            for 5 minutes. May indicate Redis slowness or middleware regex
-            complexity under load. Check Redis latency and CPU.
+            p99 threat score on {{ $labels.instance }} has exceeded 0.9 for 5
+            minutes. This may indicate sustained attack traffic or overly noisy
+            detection rules. Review JSONL logs and consider tuning thresholds.
 
       - alert: RitAPILargeResponseAnomaly
         expr: >
@@ -188,7 +188,7 @@ groups:
       # API key inventory
       # -----------------------------------------------------------------------
       - alert: RitAPINoActiveAPIKeys
-        expr: ritapi_active_api_keys == 0
+        expr: ritapi_active_rate_limit_keys == 0
         for: 5m
         labels:
           severity: warning
@@ -196,7 +196,6 @@ groups:
         annotations:
           summary: "No active API keys registered in RitAPI"
           description: >
-            The active API key gauge on {{ $labels.instance }} has been zero
-            for 5 minutes. This may be expected in JWT-only deployments, but
-            could indicate key expiry or Redis data loss. Verify with
-            GET /admin/apikey (requires SUPER_ADMIN JWT).
+            The active rate-limit keys gauge on {{ $labels.instance }} has been
+            zero for 5 minutes. This may indicate all clients are idle or Redis
+            data was flushed. Verify with redis-cli KEYS "ritapi:rate:ip:*".
