@@ -186,3 +186,15 @@ def test_large_response_threshold_value():
 
 def test_volume_threshold_value():
     assert VOLUME_THRESHOLD_BYTES == 10 * 1024 * 1024
+
+
+def test_bulk_access_check_before_route_executes(flush_test_redis):
+    """bulk_access string must appear BEFORE call_next in dispatch source."""
+    import inspect
+    from app.middlewares.exfiltration_detection import ExfiltrationDetectionMiddleware
+    source = inspect.getsource(ExfiltrationDetectionMiddleware.dispatch)
+    call_next_pos = source.index("await call_next")
+    bulk_pos = source.index("bulk_access")
+    assert bulk_pos < call_next_pos, (
+        "bulk_access check must appear BEFORE call_next in dispatch()"
+    )

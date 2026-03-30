@@ -87,6 +87,40 @@ class ExfiltrationDetectionMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         method = request.method
 
+        # --- Pre-request block for counter-based detections ---
+        redis_pre = RedisClientSingleton.get_client()
+        if redis_pre is not None:
+            try:
+                bulk_count = int(redis_pre.get(f"exfil:bulk:{ip}:{path}") or 0)
+                ep_count = int(redis_pre.scard(f"exfil:crawl:{ip}") or 0)
+                pre_reason = None
+                if bulk_count > BULK_ACCESS_THRESHOLD:
+                    pre_reason = "bulk_access"
+                elif ep_count > CRAWL_ENDPOINT_THRESHOLD:
+                    pre_reason = "sequential_crawl"
+
+                if pre_reason is not None:
+                    logger.warning(
+                        "Exfiltration pre-block [%s] from %s on %s",
+                        pre_reason, ip, path,
+                    )
+                    log_request(
+                        client_ip=ip, path=path, method=method,
+                        action="block", detection_type=f"exfil:{pre_reason}",
+                        score=0.9, reasons=f"{pre_reason} (pre-request)",
+                    )
+                    exfiltration_alerts.labels(reason=pre_reason).inc()
+                    requests_total.labels(
+                        method=method, action="block",
+                        detection_type=f"exfil:{pre_reason}",
+                    ).inc()
+                    return JSONResponse(
+                        {"error": "Forbidden", "detail": "Suspicious data access pattern detected"},
+                        status_code=403,
+                    )
+            except Exception:
+                pass  # fail-open
+
         # Let the request go through and capture the response
         response = await call_next(request)
 
