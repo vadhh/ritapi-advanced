@@ -11,6 +11,7 @@ POST /admin/apikey      Issue an API key (ADMIN+ or admin secret)
 POST /admin/apikey/rotate  Rotate an existing key (ADMIN+ or admin secret)
 DELETE /admin/apikey    Revoke an API key (ADMIN+ or admin secret)
 """
+import hmac
 import logging
 import os
 
@@ -36,7 +37,7 @@ def _is_admin_secret(x_admin_secret: str = Header(default="")) -> bool:
     """Returns True if the request provides the correct ADMIN_SECRET header."""
     if not _ADMIN_SECRET:
         return False
-    return x_admin_secret == _ADMIN_SECRET
+    return hmac.compare_digest(x_admin_secret, _ADMIN_SECRET)
 
 
 async def _require_admin_access(

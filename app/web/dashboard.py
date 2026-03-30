@@ -7,6 +7,7 @@ Routes:
   GET  /dashboard/stats    → JSON: aggregate counts + Redis key stats
   GET  /dashboard/status   → JSON: service health (Redis, YARA)
 """
+import hmac
 import json
 import logging
 import os
@@ -40,7 +41,7 @@ def _require_dashboard_access(request: Request) -> None:
         return  # open access
     auth = request.headers.get("authorization", "")
     token = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
-    if token != _DASHBOARD_TOKEN:
+    if not hmac.compare_digest(token, _DASHBOARD_TOKEN):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Dashboard access requires a valid DASHBOARD_TOKEN.",
