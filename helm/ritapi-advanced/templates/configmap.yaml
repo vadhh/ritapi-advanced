@@ -15,4 +15,3 @@ data:
   ENV: {{ .Values.config.env | quote }}
   ROUTING_CONFIG_PATH: {{ .Values.config.routingConfigPath | quote }}
   POLICIES_DIR: {{ .Values.config.policiesDir | quote }}
-  REDIS_URL: {{ include "ritapi-advanced.redisUrl" . | quote }}
