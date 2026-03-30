@@ -6,7 +6,7 @@ Audit performed: 2026-03-30
 
 ## Critical
 
-- [ ] **C-1** — Policy dispatch is dead code: no middleware populates `request.state.detections`, so `DecisionEngineMiddleware` policy dispatch (on_rate_limit, on_bot_detection, etc.) never runs — all detections block unconditionally ignoring YAML policy settings. (`app/main.py:24-33`, `app/middlewares/decision_engine.py:58-73`)
+- [x] **C-1** — Policy dispatch is dead code: no middleware populates `request.state.detections`, so `DecisionEngineMiddleware` policy dispatch (on_rate_limit, on_bot_detection, etc.) never runs — all detections block unconditionally ignoring YAML policy settings. (`app/main.py:24-33`, `app/middlewares/decision_engine.py:58-73`)
 
 - [x] **C-2** — Raw API key embedded in Redis keyspace: full plaintext API key used in key names (`ritapi:rate:apikey:<key>:<path>`), violating the hash-only storage design. (`app/middlewares/rate_limit.py:74`)
 
@@ -20,11 +20,11 @@ Audit performed: 2026-03-30
 
 - [x] **H-1** — Timing oracle on `ADMIN_SECRET` and `DASHBOARD_TOKEN`: uses `==` instead of `hmac.compare_digest()`, vulnerable to timing side-channel attacks. (`app/web/admin.py:39`, `app/web/dashboard.py:43`)
 
-- [ ] **H-2** — Bot detection blocks *after* route handler executes: `call_next()` is called first, then block decision is made — backend has already processed the request before the 403 is returned. (`app/middlewares/bot_detection.py:213-257`)
+- [x] **H-2** — Bot detection blocks *after* route handler executes: `call_next()` is called first, then block decision is made — backend has already processed the request before the 403 is returned. (`app/middlewares/bot_detection.py:213-257`)
 
-- [ ] **H-3** — Exfiltration detection same post-execution block issue: data is already queried before the 403 fires. (`app/middlewares/exfiltration_detection.py:84-185`)
+- [x] **H-3** — Exfiltration detection same post-execution block issue: data is already queried before the 403 fires. (`app/middlewares/exfiltration_detection.py:84-185`)
 
-- [ ] **H-4** — `_incrby` TTL race condition: "first write" detection using `val == amount` is incorrect for concurrent requests with variable byte amounts. (`app/middlewares/exfiltration_detection.py:57-60`)
+- [x] **H-4** — `_incrby` TTL race condition: "first write" detection using `val == amount` is incorrect for concurrent requests with variable byte amounts. (`app/middlewares/exfiltration_detection.py:57-60`)
 
 - [x] **H-5** — 5 Prometheus alert rules reference non-existent metrics: `ritapi_redis_connected`, `ritapi_injections_total`, `ritapi_exfil_blocks_total`, `ritapi_request_duration_seconds_bucket`, and `ritapi_active_api_keys` are never registered — those alerts silently never fire. (`docker/prometheus/alerts.yaml`)
 
@@ -34,7 +34,7 @@ Audit performed: 2026-03-30
 
 ## Medium
 
-- [ ] **M-1** — Env var name mismatch: docs and `.env.staging` use `REDIS_SENTINEL_MASTER` but code reads `REDIS_SENTINEL_SERVICE` — Sentinel deployments silently fall back to `mymaster`. (`app/utils/redis_client.py:64`, `.env.staging:37`)
+- [x] **M-1** — Env var name mismatch: docs and `.env.staging` use `REDIS_SENTINEL_MASTER` but code reads `REDIS_SENTINEL_SERVICE` — Sentinel deployments silently fall back to `mymaster`. (`app/utils/redis_client.py:64`, `.env.staging:37`)
 
 - [ ] **M-2** — `DASHBOARD_TOKEN` absent from all deployment templates: missing from `.env.example`, `.env.staging`, and Helm ConfigMap — dashboard deploys with no auth by default. (`.env.example`, `helm/ritapi-advanced/templates/configmap.yaml`)
 
@@ -50,9 +50,9 @@ Audit performed: 2026-03-30
 
 - [ ] **M-8** — Per-process singletons unreliable with multiple workers: YARA scanner, Redis client, and policy/route caches are per-process — hot-reload via SIGHUP or `reload_policies()` only affects one worker under `uvicorn --workers 2`. (`app/utils/yara_scanner.py:183`, `Dockerfile:72`)
 
-- [ ] **M-9** — Redis DB mismatch between local and CI: tests use DB 15 locally but DB 1 in CI — `flushdb()` in CI could destroy unrelated data if DB 1 has pre-existing state. (`tests/conftest.py:15`, `.github/workflows/ci.yml:113`)
+- [x] **M-9** — Redis DB mismatch between local and CI: tests use DB 15 locally but DB 1 in CI — `flushdb()` in CI could destroy unrelated data if DB 1 has pre-existing state. (`tests/conftest.py:15`, `.github/workflows/ci.yml:113`)
 
-- [ ] **M-10** — `/readyz` in rate-limit skip list but route does not exist: load balancers probing `/readyz` receive a 401 (not in auth bypass list) or 404. (`app/middlewares/rate_limit.py:32`)
+- [x] **M-10** — `/readyz` in rate-limit skip list but route does not exist: load balancers probing `/readyz` receive a 401 (not in auth bypass list) or 404. (`app/middlewares/rate_limit.py:32`)
 
 ---
 
@@ -60,9 +60,9 @@ Audit performed: 2026-03-30
 
 - [ ] **L-1** — Developer username and filesystem path committed in `.env`: `LOG_PATH=/home/stardhoom/...` exposes developer info. (`.env:10`)
 
-- [ ] **L-2** — Broken `ritapi` CLI entry point in `pyproject.toml`: points to `app.main:app` (a FastAPI instance), not a callable — `ritapi` command does not work. (`pyproject.toml:56`)
+- [x] **L-2** — Broken `ritapi` CLI entry point in `pyproject.toml`: points to `app.main:app` (a FastAPI instance), not a callable — `ritapi` command does not work. (`pyproject.toml:56`)
 
-- [ ] **L-3** — Test dependencies bundled in production image: `pytest`, `pytest-anyio`, `anyio`, `pytest-cov` are in `requirements.txt` and installed into the Docker image. (`requirements.txt:13-16`)
+- [x] **L-3** — Test dependencies bundled in production image: `pytest`, `pytest-anyio`, `anyio`, `pytest-cov` are in `requirements.txt` and installed into the Docker image. (`requirements.txt:13-16`)
 
 - [ ] **L-4** — `XSS_Dangerous_Tags` YARA rule too broad: `2 of them` condition matches normal HTML containing e.g. `<details>` and `<svg>` — high false-positive risk for CMS or rich-text payloads. (`rules/xss.yar:92`)
 
