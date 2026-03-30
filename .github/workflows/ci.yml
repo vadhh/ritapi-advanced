@@ -60,8 +60,7 @@ jobs:
         run: |
           pip install pip-audit -q
           pip-audit -r requirements.lock \
-            --ignore-vuln CVE-2024-23342 \
-            --ignore-vuln CVE-2026-30922
+            --ignore-vuln CVE-2024-23342
 
       - name: gitleaks — secret scanning
         uses: gitleaks/gitleaks-action@v2
