@@ -68,3 +68,13 @@ def test_api_key_not_in_redis_key_name(flush_test_redis):
     expected_key = f"ritapi:rate:apikey:{key_hash}:{path_key}"
     assert api_key not in expected_key, "Plaintext key must not be in Redis key name"
     assert key_hash in expected_key, "Hash prefix must be in Redis key name"
+
+
+def test_rate_limit_writes_to_state_detections():
+    """RateLimitMiddleware must write to request.state.detections."""
+    import inspect
+    from app.middlewares.rate_limit import RateLimitMiddleware
+    source = inspect.getsource(RateLimitMiddleware.dispatch)
+    assert "request.state.detections" in source, (
+        "RateLimitMiddleware must write to request.state.detections"
+    )

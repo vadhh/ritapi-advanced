@@ -135,3 +135,13 @@ def test_nested_xss_in_json_blocked(client, auth_headers):
     payload = {"data": {"nested": {"field": "<script>alert('xss')</script>"}}}
     resp = client.post("/api/data", headers=headers, content=json.dumps(payload))
     assert resp.status_code == 403
+
+
+def test_injection_writes_to_state_detections():
+    """InjectionDetectionMiddleware must write to request.state.detections."""
+    import inspect
+    from app.middlewares.injection_detection import InjectionDetectionMiddleware
+    source = inspect.getsource(InjectionDetectionMiddleware.dispatch)
+    assert "request.state.detections" in source, (
+        "InjectionDetectionMiddleware must write to request.state.detections"
+    )

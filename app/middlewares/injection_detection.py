@@ -220,6 +220,13 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
         hit, category, snippet = _scan_value("user_agent", ua)
         if hit:
             self._log_and_block(client_ip, request, category, snippet)
+            if not hasattr(request.state, "detections"):
+                request.state.detections = []
+            request.state.detections.append({
+                "type": "injection",
+                "score": 0.95,
+                "reason": f"{category}: {snippet[:120]}",
+            })
             return self._blocked_response(category)
 
         # --- 2. URL / query string check ---
@@ -227,6 +234,13 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
         hit, category, snippet = _scan_value("url", raw_url)
         if hit:
             self._log_and_block(client_ip, request, category, snippet)
+            if not hasattr(request.state, "detections"):
+                request.state.detections = []
+            request.state.detections.append({
+                "type": "injection",
+                "score": 0.95,
+                "reason": f"{category}: {snippet[:120]}",
+            })
             return self._blocked_response(category)
 
         # --- 3. Request body check (POST / PUT / PATCH only) ---
@@ -251,6 +265,13 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
             hit, category, snippet = _scan_value("body", body_text)
             if hit:
                 self._log_and_block(client_ip, request, category, snippet)
+                if not hasattr(request.state, "detections"):
+                    request.state.detections = []
+                request.state.detections.append({
+                    "type": "injection",
+                    "score": 0.95,
+                    "reason": f"{category}: {snippet[:120]}",
+                })
                 return self._blocked_response(category)
 
             # JSON recursive scan
@@ -261,6 +282,13 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
                     hit, category, snippet = _scan_recursive(payload)
                     if hit:
                         self._log_and_block(client_ip, request, category, snippet)
+                        if not hasattr(request.state, "detections"):
+                            request.state.detections = []
+                        request.state.detections.append({
+                            "type": "injection",
+                            "score": 0.95,
+                            "reason": f"{category}: {snippet[:120]}",
+                        })
                         return self._blocked_response(category)
             except (json.JSONDecodeError, ValueError):
                 pass  # not JSON — plain text scan above is sufficient
@@ -274,6 +302,13 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
                     if matches:
                         top = matches[0]
                         self._log_and_block(client_ip, request, f"yara:{top.rule}", top.rule)
+                        if not hasattr(request.state, "detections"):
+                            request.state.detections = []
+                        request.state.detections.append({
+                            "type": "injection",
+                            "score": 0.95,
+                            "reason": f"yara:{top.rule}: {top.rule}",
+                        })
                         return self._blocked_response("yara")
             except Exception as e:
                 logger.debug("YARA scan skipped: %s", e)

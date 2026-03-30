@@ -108,6 +108,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                             ).inc()
                             threat_score.observe(0.9)
 
+                        identity_label = client_ip if id_type == "ip" else f"key:{api_key[:8]}…"
+                        if not hasattr(request.state, "detections"):
+                            request.state.detections = []
+                        request.state.detections.append({
+                            "type": "rate_limit",
+                            "score": 1.0,
+                            "reason": f"Rate limit exceeded for {id_type}:{identity_label}",
+                        })
                         return JSONResponse(
                             {
                                 "error": "Too Many Requests",
