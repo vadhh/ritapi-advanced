@@ -53,3 +53,18 @@ def test_api_key_rate_limit(client, redis):
             hit_429 = True
             break
     assert hit_429, "API key rate limit did not trigger"
+
+
+def test_api_key_not_in_redis_key_name(flush_test_redis):
+    """Plaintext API key must not appear in Redis rate-limit key names."""
+    import hashlib
+
+    api_key = "supersecret-api-key-xyz"
+    key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:16]
+
+    # The plaintext key must NOT appear in any Redis key
+    # The hash prefix MUST appear in the Redis key
+    path_key = "_test_path"
+    expected_key = f"ritapi:rate:apikey:{key_hash}:{path_key}"
+    assert api_key not in expected_key, "Plaintext key must not be in Redis key name"
+    assert key_hash in expected_key, "Hash prefix must be in Redis key name"

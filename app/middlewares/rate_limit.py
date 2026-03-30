@@ -9,6 +9,7 @@ Policy-driven behavior:
   - policy.rate_limit.requests  → max requests per window for this route
   - policy.rate_limit.window_seconds → window duration in seconds
 """
+import hashlib
 import logging
 import os
 
@@ -71,7 +72,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             if client_ip:
                 identities.append(("ip", f"ritapi:rate:ip:{client_ip}:{path_key}"))
             if api_key:
-                identities.append(("apikey", f"ritapi:rate:apikey:{api_key}:{path_key}"))
+                api_key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:16]
+                identities.append(("apikey", f"ritapi:rate:apikey:{api_key_hash}:{path_key}"))
 
             for id_type, rate_key in identities:
                 log_key = rate_key.replace(":rate:", ":rate_log:")
