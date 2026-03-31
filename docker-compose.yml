@@ -1,0 +1,74 @@
+# docker-compose.yml — RitAPI Advanced client install
+#
+# Pulls the pre-built image from GHCR — no source code needed.
+#
+# Quick start:
+#   curl -sSL https://raw.githubusercontent.com/vadhh/ritapi-advanced/main/bootstrap.sh | bash
+#
+# Manual start:
+#   cp .env.example .env   # edit SECRET_KEY, ADMIN_SECRET, REDIS_PASSWORD
+#   docker compose up -d
+#   curl http://localhost:8001/healthz
+
+services:
+
+  redis:
+    image: redis:7-alpine
+    container_name: ritapi-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --save 60 1
+      --loglevel warning
+      --requirepass "${REDIS_PASSWORD}"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - ritapi
+
+  app:
+    image: ghcr.io/vadhh/ritapi-advanced:latest
+    container_name: ritapi-app
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8001}:8001"
+    environment:
+      SECRET_KEY:            "${SECRET_KEY}"
+      ADMIN_SECRET:          "${ADMIN_SECRET}"
+      REDIS_URL:             "redis://:${REDIS_PASSWORD}@redis:6379/1"
+      JWT_ALGORITHM:         "${JWT_ALGORITHM:-HS256}"
+      JWT_EXPIRE_MINUTES:    "${JWT_EXPIRE_MINUTES:-60}"
+      RATE_LIMIT_REQUESTS:   "${RATE_LIMIT_REQUESTS:-100}"
+      RATE_LIMIT_WINDOW:     "${RATE_LIMIT_WINDOW:-60}"
+      DASHBOARD_TOKEN:       "${DASHBOARD_TOKEN:-}"
+      LOG_PATH:              /var/log/ritapi/ritapi_advanced.jsonl
+      YARA_RULES_DIR:        /app/rules
+      ROUTING_CONFIG_PATH:   /app/configs/routing.yml
+      POLICIES_DIR:          /app/configs/policies
+    volumes:
+      - app_logs:/var/log/ritapi
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8001/healthz')"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    networks:
+      - ritapi
+
+networks:
+  ritapi:
+    driver: bridge
+
+volumes:
+  redis_data:
+  app_logs:

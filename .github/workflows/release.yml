@@ -1,0 +1,111 @@
+# .github/workflows/release.yml
+#
+# Triggered on version tags (v*.*.*) after the main CI pipeline succeeds.
+# Publishes:
+#   1. Helm chart  → GitHub Pages (https://vadhh.github.io/ritapi-advanced)
+#   2. Python package → PyPI (https://pypi.org/project/ritapi-advanced)
+
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write      # push to gh-pages, create GitHub Release
+  pages: write
+  id-token: write      # PyPI trusted publisher (OIDC)
+
+jobs:
+
+  # ---------------------------------------------------------------------------
+  # 1. Create GitHub Release with release notes
+  # ---------------------------------------------------------------------------
+  github-release:
+    name: GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            docker-compose.yml
+            bootstrap.sh
+
+  # ---------------------------------------------------------------------------
+  # 2. Publish Helm chart to GitHub Pages
+  # ---------------------------------------------------------------------------
+  helm-publish:
+    name: Publish Helm Chart
+    runs-on: ubuntu-latest
+    needs: github-release
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Package chart
+        run: helm package helm/ritapi-advanced --destination /tmp/helm-chart
+
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+          fetch-depth: 0
+
+      - name: Update Helm repo index
+        run: |
+          mkdir -p gh-pages/charts
+          cp /tmp/helm-chart/*.tgz gh-pages/charts/
+          if [[ -f gh-pages/charts/index.yaml ]]; then
+            helm repo index gh-pages/charts \
+              --url https://vadhh.github.io/ritapi-advanced/charts \
+              --merge gh-pages/charts/index.yaml
+          else
+            helm repo index gh-pages/charts \
+              --url https://vadhh.github.io/ritapi-advanced/charts
+          fi
+
+      - name: Push to gh-pages
+        run: |
+          cd gh-pages
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add charts/
+          git commit -m "helm: publish chart for ${{ github.ref_name }}" || echo "Nothing to commit"
+          git push origin gh-pages
+
+  # ---------------------------------------------------------------------------
+  # 3. Publish Python package to PyPI (OIDC trusted publisher)
+  # ---------------------------------------------------------------------------
+  pypi-publish:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    needs: github-release
+    environment:
+      name: pypi
+      url: https://pypi.org/project/ritapi-advanced/
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build distribution
+        run: |
+          pip install build -q
+          python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # Uses OIDC trusted publisher — no API token needed.
+        # Configure at: https://pypi.org/manage/project/ritapi-advanced/settings/publishing/
+        # Publisher settings: owner=vadhh, repo=ritapi-advanced, workflow=release.yml, env=pypi

@@ -4,7 +4,7 @@ build-backend = "setuptools.backends.legacy:build"
 
 [project]
 name = "ritapi-advanced"
-version = "1.1.0"
+version = "1.2.1"
 description = "Layer-7 API protection service: WAF, rate limiting, bot detection, injection/exfiltration detection, JWT/API-key auth, RBAC"
 readme = "README.md"
 requires-python = ">=3.11"
