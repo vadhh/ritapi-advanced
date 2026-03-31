@@ -118,8 +118,8 @@ class ExfiltrationDetectionMiddleware(BaseHTTPMiddleware):
                         "status_code": 403,
                     })
                     return await call_next(request)
-            except Exception:
-                pass  # fail-open
+            except Exception as e:
+                logger.debug("Exfil pre-request Redis check failed (fail-open): %s", e)
 
         # Let the request go through and capture the response
         response = await call_next(request)

@@ -65,7 +65,7 @@ def metrics():
 def main() -> None:
     """Entry point for the ``ritapi`` CLI command."""
     import uvicorn
-    host = os.getenv("HOST", "0.0.0.0")
+    host = os.getenv("HOST", "0.0.0.0")  # noqa: S104
     port = int(os.getenv("PORT", "8000"))
     log_level = os.getenv("LOG_LEVEL", "info")
     uvicorn.run("app.main:app", host=host, port=port, log_level=log_level)

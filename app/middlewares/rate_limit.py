@@ -14,7 +14,6 @@ import logging
 import os
 
 from fastapi import Request
-from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.utils.logging import log_request

@@ -27,11 +27,12 @@ import os
 import time
 
 import redis
-from app.utils.metrics import redis_connected
 from redis.backoff import ExponentialBackoff
 from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 from redis.retry import Retry
+
+from app.utils.metrics import redis_connected
 
 logger = logging.getLogger(__name__)
 

@@ -228,8 +228,8 @@ class BotDetectionMiddleware(BaseHTTPMiddleware):
                         "status_code": 403,
                     })
                     return await call_next(request)
-            except Exception:
-                pass  # fail-open: let request through if Redis check fails
+            except Exception as e:
+                logger.debug("Bot pre-request Redis check failed (fail-open): %s", e)
 
         # Let the request proceed to get the response status code
         response = await call_next(request)

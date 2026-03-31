@@ -1,15 +1,19 @@
 """Tests for DecisionEngineMiddleware policy dispatch."""
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+import inspect
+from unittest.mock import MagicMock, patch
 
-import pytest
+from fastapi import Request
 from starlette.responses import JSONResponse as StarletteJSONResponse
+
+from app.middlewares.decision_engine import DecisionEngineMiddleware
+from app.middlewares.injection_detection import InjectionDetectionMiddleware
+from app.middlewares.rate_limit import RateLimitMiddleware
+from app.policies.service import DEFAULT_POLICY, DecisionActions, Policy
 
 
 def test_decision_engine_checks_detections_before_call_next():
     """Decision Engine must check detections BEFORE calling call_next."""
-    import inspect
-    from app.middlewares.decision_engine import DecisionEngineMiddleware
     source = inspect.getsource(DecisionEngineMiddleware.dispatch)
     call_next_pos = source.index("call_next")
     detections_check_pos = source.index("detections")
@@ -20,10 +24,6 @@ def test_decision_engine_checks_detections_before_call_next():
 
 def test_block_detection_prevents_route_handler():
     """When a block detection is present, route handler must NOT execute."""
-    from fastapi import Request
-    from app.middlewares.decision_engine import DecisionEngineMiddleware
-    from app.policies.service import DEFAULT_POLICY
-
     mock_request = MagicMock(spec=Request)
     mock_request.headers.get.return_value = "10.0.0.1"
     mock_request.client.host = "10.0.0.1"
@@ -55,10 +55,6 @@ def test_block_detection_prevents_route_handler():
 
 def test_monitor_detection_allows_route_handler():
     """When policy action is monitor, route handler must execute."""
-    from fastapi import Request
-    from app.middlewares.decision_engine import DecisionEngineMiddleware
-    from app.policies.service import Policy, DecisionActions
-
     monitor_policy = Policy(
         name="test",
         decision_actions=DecisionActions(on_bot_detection="monitor"),
@@ -95,10 +91,6 @@ def test_monitor_detection_allows_route_handler():
 
 def test_rate_limit_detection_returns_429():
     """Rate limit detection must produce 429 status code."""
-    from fastapi import Request
-    from app.middlewares.decision_engine import DecisionEngineMiddleware
-    from app.policies.service import DEFAULT_POLICY
-
     mock_request = MagicMock(spec=Request)
     mock_request.headers.get.return_value = "10.0.0.3"
     mock_request.client.host = "10.0.0.3"
@@ -126,15 +118,7 @@ def test_rate_limit_detection_returns_429():
 
 def test_injection_calls_call_next_not_blocked_response():
     """InjectionDetectionMiddleware must call call_next after writing detections."""
-    import inspect
-    from app.middlewares.injection_detection import InjectionDetectionMiddleware
     source = inspect.getsource(InjectionDetectionMiddleware.dispatch)
-    # _blocked_response must NOT appear before the final call_next
-    # Specifically: after any detections.append, the next action must be call_next
-    # Simplest check: _blocked_response is not in the body of dispatch
-    # (it may still exist as a @staticmethod but must not be called in dispatch)
-    dispatch_body = source.split("_blocked_response")[0] if "_blocked_response" in source else source
-    # If _blocked_response is in dispatch source, it should only appear after call_next
     if "_blocked_response" in source:
         call_next_pos = source.rindex("call_next")
         blocked_pos = source.rindex("_blocked_response")
@@ -145,10 +129,6 @@ def test_injection_calls_call_next_not_blocked_response():
 
 def test_throttle_sets_redis_key():
     """_apply_throttle must set ritapi:throttle:{ip} key in Redis with TTL <= 60s."""
-    from unittest.mock import MagicMock, patch
-    from fastapi import Request
-    from app.middlewares.decision_engine import DecisionEngineMiddleware
-
     mock_redis = MagicMock()
     middleware = DecisionEngineMiddleware(app=MagicMock())
     mock_request = MagicMock(spec=Request)
@@ -169,27 +149,17 @@ def test_throttle_sets_redis_key():
 
 def test_rate_limit_calls_call_next_not_jsonresponse_429():
     """RateLimitMiddleware must call call_next after writing detections, not return 429."""
-    import inspect
-    from app.middlewares.rate_limit import RateLimitMiddleware
     source = inspect.getsource(RateLimitMiddleware.dispatch)
     detections_pos = source.index("request.state.detections")
     post_detection = source[detections_pos:]
-    # After writing detections, the first return should be call_next, not 429
     next_return_pos = post_detection.index("return")
-    assert "call_next" in post_detection[next_return_pos:next_return_pos+30], (
+    assert "call_next" in post_detection[next_return_pos:next_return_pos + 30], (
         "After writing detections, RateLimitMiddleware must call call_next not return 429"
     )
 
 
 def test_multi_detection_block_wins_over_monitor():
     """When detections include both monitor and block, block must take precedence."""
-    import asyncio
-    from unittest.mock import MagicMock, patch
-    from fastapi import Request
-    from app.middlewares.decision_engine import DecisionEngineMiddleware
-    from app.policies.service import DEFAULT_POLICY
-    from starlette.responses import JSONResponse as StarletteJSONResponse
-
     mock_request = MagicMock(spec=Request)
     mock_request.headers.get.return_value = "10.0.0.5"
     mock_request.client.host = "10.0.0.5"
@@ -218,13 +188,6 @@ def test_multi_detection_block_wins_over_monitor():
 
 def test_policy_monitor_allows_injection_through():
     """When policy sets on_injection: monitor, injection detection does not block the request."""
-    import asyncio
-    from unittest.mock import MagicMock, patch
-    from fastapi import Request
-    from app.middlewares.decision_engine import DecisionEngineMiddleware
-    from app.policies.service import Policy, DecisionActions
-    from starlette.responses import JSONResponse as StarletteJSONResponse
-
     monitor_policy = Policy(
         name="test_monitor",
         decision_actions=DecisionActions(on_injection="monitor"),
@@ -260,9 +223,7 @@ def test_policy_monitor_allows_injection_through():
 
 
 def test_injection_blocked_request_never_hits_backend(client):
-    """End-to-end: SQLi in URL must be blocked before reaching the route handler.
-    Auth middleware runs before injection; a 401, 403, or 404 all indicate the
-    route handler did not execute the business logic."""
+    """End-to-end: SQLi in URL must be blocked before reaching the route handler."""
     response = client.get("/api/v1/health?id=1' OR '1'='1")
     assert response.status_code in (401, 403, 404), (
         f"SQLi payload should be blocked (401/403) or not found (404), got {response.status_code}"
