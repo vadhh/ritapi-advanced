@@ -54,21 +54,38 @@ def _require_dashboard_access(request: Request) -> None:
 # ---------------------------------------------------------------------------
 
 def _tail_jsonl(path: str, n: int) -> list[dict]:
-    """Read the last n lines of a JSONL file without loading the whole file."""
+    """Read the last n lines of a JSONL file without loading the whole file.
+
+    Uses an expanding-chunk reverse reader so truncation never silently drops
+    lines regardless of actual line length.  Doubles the read window until n
+    complete lines are found or the entire file has been consumed.
+    """
     p = Path(path)
     if not p.exists():
         return []
 
     try:
         with p.open("rb") as f:
-            # Seek from end to grab approximately n lines
             f.seek(0, 2)
             file_size = f.tell()
-            chunk = min(file_size, n * 300)  # ~300 bytes per line estimate
-            f.seek(max(0, file_size - chunk))
-            raw = f.read().decode("utf-8", errors="replace")
+            if file_size == 0:
+                return []
 
-        lines = [ln for ln in raw.splitlines() if ln.strip()]
+            chunk_size = max(8192, n * 512)  # start at 8 KB or 512 B/line estimate
+            offset = file_size
+
+            while True:
+                offset = max(0, offset - chunk_size)
+                f.seek(offset)
+                raw = f.read().decode("utf-8", errors="replace")
+                lines = [ln for ln in raw.splitlines() if ln.strip()]
+
+                # If we've read the whole file OR have enough lines, stop
+                if offset == 0 or len(lines) >= n + 1:
+                    break
+                # Double the window and retry
+                chunk_size *= 2
+
         tail = lines[-n:]
         result = []
         for line in reversed(tail):  # newest first
