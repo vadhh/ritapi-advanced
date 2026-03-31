@@ -84,9 +84,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             for id_type, rate_key in identities:
                 log_key = rate_key.replace(":rate:", ":rate_log:")
                 try:
-                    current = redis.incr(rate_key)
-                    if current == 1:
-                        redis.expire(rate_key, rate_window)
+                    pipe = redis.pipeline()
+                    pipe.incr(rate_key)
+                    pipe.expire(rate_key, rate_window, nx=True)
+                    current, _ = pipe.execute()
 
                     if current > rate_limit:
                         if not redis.exists(log_key):
