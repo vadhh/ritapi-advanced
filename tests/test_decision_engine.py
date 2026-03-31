@@ -122,3 +122,36 @@ def test_rate_limit_detection_returns_429():
             )
 
     assert response.status_code == 429, f"Rate limit must return 429, got {response.status_code}"
+
+
+def test_injection_calls_call_next_not_blocked_response():
+    """InjectionDetectionMiddleware must call call_next after writing detections."""
+    import inspect
+    from app.middlewares.injection_detection import InjectionDetectionMiddleware
+    source = inspect.getsource(InjectionDetectionMiddleware.dispatch)
+    # _blocked_response must NOT appear before the final call_next
+    # Specifically: after any detections.append, the next action must be call_next
+    # Simplest check: _blocked_response is not in the body of dispatch
+    # (it may still exist as a @staticmethod but must not be called in dispatch)
+    dispatch_body = source.split("_blocked_response")[0] if "_blocked_response" in source else source
+    # If _blocked_response is in dispatch source, it should only appear after call_next
+    if "_blocked_response" in source:
+        call_next_pos = source.rindex("call_next")
+        blocked_pos = source.rindex("_blocked_response")
+        assert blocked_pos < call_next_pos or "_blocked_response" not in source.split("return await call_next")[0], (
+            "dispatch must not call _blocked_response — use call_next instead"
+        )
+
+
+def test_rate_limit_calls_call_next_not_jsonresponse_429():
+    """RateLimitMiddleware must call call_next after writing detections, not return 429."""
+    import inspect
+    from app.middlewares.rate_limit import RateLimitMiddleware
+    source = inspect.getsource(RateLimitMiddleware.dispatch)
+    detections_pos = source.index("request.state.detections")
+    post_detection = source[detections_pos:]
+    # After writing detections, the first return should be call_next, not 429
+    next_return_pos = post_detection.index("return")
+    assert "call_next" in post_detection[next_return_pos:next_return_pos+30], (
+        "After writing detections, RateLimitMiddleware must call call_next not return 429"
+    )

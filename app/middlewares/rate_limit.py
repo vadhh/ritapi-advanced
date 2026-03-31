@@ -114,14 +114,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                             "type": "rate_limit",
                             "score": 1.0,
                             "reason": f"Rate limit exceeded for {id_type}:{identity_label}",
+                            "status_code": 429,
                         })
-                        return JSONResponse(
-                            {
-                                "error": "Too Many Requests",
-                                "detail": f"Rate limit exceeded ({rate_limit}/{rate_window}s)",
-                            },
-                            status_code=429,
-                        )
+                        return await call_next(request)
                 except Exception as e:
                     logger.error("Rate limiter Redis error: %s", e)
                     RedisClientSingleton.mark_failed()

@@ -226,8 +226,9 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
                 "type": "injection",
                 "score": 0.95,
                 "reason": f"{category}: {snippet[:120]}",
+                "status_code": 403,
             })
-            return self._blocked_response(category)
+            return await call_next(request)
 
         # --- 2. URL / query string check ---
         raw_url = str(request.url)
@@ -240,8 +241,9 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
                 "type": "injection",
                 "score": 0.95,
                 "reason": f"{category}: {snippet[:120]}",
+                "status_code": 403,
             })
-            return self._blocked_response(category)
+            return await call_next(request)
 
         # --- 3. Request body check (POST / PUT / PATCH only) ---
         if request.method in ("POST", "PUT", "PATCH"):
@@ -271,8 +273,9 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
                     "type": "injection",
                     "score": 0.95,
                     "reason": f"{category}: {snippet[:120]}",
+                    "status_code": 403,
                 })
-                return self._blocked_response(category)
+                return await call_next(request)
 
             # JSON recursive scan
             import json
@@ -288,8 +291,9 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
                             "type": "injection",
                             "score": 0.95,
                             "reason": f"{category}: {snippet[:120]}",
+                            "status_code": 403,
                         })
-                        return self._blocked_response(category)
+                        return await call_next(request)
             except (json.JSONDecodeError, ValueError):
                 pass  # not JSON — plain text scan above is sufficient
 
@@ -308,8 +312,9 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
                             "type": "injection",
                             "score": 0.95,
                             "reason": f"yara:{top.rule}: {top.rule}",
+                            "status_code": 403,
                         })
-                        return self._blocked_response("yara")
+                        return await call_next(request)
             except Exception as e:
                 logger.debug("YARA scan skipped: %s", e)
 
