@@ -50,8 +50,10 @@ class DecisionActions:
     on_auth_failure: str = "block"
     on_rate_limit: str = "block"
     on_injection: str = "block"
-    on_bot_detection: str = "monitor"
+    on_bot_detection: str = "monitor"   # post-response scoring is informational
+    on_bot_block: str = "block"         # pre-request block when risk >= threshold
     on_exfiltration: str = "monitor"
+    on_exfiltration_block: str = "block"  # pre-request block when counter exceeded
 
     def get_action(self, detection_type: str) -> str:
         """Return the action for a detection type, defaulting to 'block'."""
@@ -128,7 +130,9 @@ def _load_policies() -> None:
                     on_rate_limit=actions_data.get("on_rate_limit", "block"),
                     on_injection=actions_data.get("on_injection", "block"),
                     on_bot_detection=actions_data.get("on_bot_detection", "monitor"),
+                    on_bot_block=actions_data.get("on_bot_block", "block"),
                     on_exfiltration=actions_data.get("on_exfiltration", "monitor"),
+                    on_exfiltration_block=actions_data.get("on_exfiltration_block", "block"),
                 ),
             )
             _policies[name] = policy

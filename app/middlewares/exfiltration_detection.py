@@ -104,20 +104,15 @@ class ExfiltrationDetectionMiddleware(BaseHTTPMiddleware):
                         "Exfiltration pre-block [%s] from %s on %s",
                         pre_reason, ip, path,
                     )
-                    log_request(
-                        client_ip=ip, path=path, method=method,
-                        action="block", detection_type=f"exfil:{pre_reason}",
-                        score=0.9, reasons=f"{pre_reason} (pre-request)",
-                    )
-                    exfiltration_alerts.labels(reason=pre_reason).inc()
-                    requests_total.labels(
-                        method=method, action="block",
-                        detection_type=f"exfil:{pre_reason}",
-                    ).inc()
-                    return JSONResponse(
-                        {"error": "Forbidden", "detail": "Suspicious data access pattern detected"},
-                        status_code=403,
-                    )
+                    if not hasattr(request.state, "detections"):
+                        request.state.detections = []
+                    request.state.detections.append({
+                        "type": "exfiltration_block",
+                        "score": 0.9,
+                        "reason": f"{pre_reason} (pre-request counter exceeded)",
+                        "status_code": 403,
+                    })
+                    return await call_next(request)
             except Exception:
                 pass  # fail-open
 

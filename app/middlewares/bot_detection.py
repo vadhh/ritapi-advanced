@@ -219,14 +219,15 @@ class BotDetectionMiddleware(BaseHTTPMiddleware):
                         "Bot pre-block %s on %s — cumulative risk %d >= %d",
                         ip, path, existing_risk, BLOCK_THRESHOLD,
                     )
-                    bot_blocks.inc()
-                    requests_total.labels(
-                        method=method, action="block", detection_type="bot:pre_block"
-                    ).inc()
-                    return JSONResponse(
-                        {"error": "Forbidden", "detail": "Automated request detected"},
-                        status_code=403,
-                    )
+                    if not hasattr(request.state, "detections"):
+                        request.state.detections = []
+                    request.state.detections.append({
+                        "type": "bot_block",
+                        "score": round(existing_risk / BLOCK_THRESHOLD, 4),
+                        "reason": f"Cumulative bot risk {existing_risk} >= {BLOCK_THRESHOLD}",
+                        "status_code": 403,
+                    })
+                    return await call_next(request)
             except Exception:
                 pass  # fail-open: let request through if Redis check fails
 
