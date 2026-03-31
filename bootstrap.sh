@@ -1,37 +1,97 @@
 #!/usr/bin/env bash
-# bootstrap.sh — RitAPI Advanced one-liner installer
+# bootstrap.sh — RitAPI Advanced installer
 #
-# Usage (recommended):
+# One-liner (interactive):
 #   curl -sSL https://raw.githubusercontent.com/vadhh/ritapi-advanced/main/bootstrap.sh | bash
 #
-# Or clone first:
-#   git clone https://github.com/vadhh/ritapi-advanced && cd ritapi-advanced && bash bootstrap.sh
+# Non-interactive (all secrets auto-generated, no prompts):
+#   curl -sSL .../bootstrap.sh | bash -s -- --auto
+#
+# Upgrade existing install (pull latest image, restart):
+#   curl -sSL .../bootstrap.sh | bash -s -- --upgrade
+#
+# Uninstall:
+#   curl -sSL .../bootstrap.sh | bash -s -- --uninstall
+#
+# Pin a specific version:
+#   curl -sSL .../bootstrap.sh | bash -s -- --version v1.2.2
+#
+# Clone-then-run (avoids curl|bash):
+#   git clone https://github.com/vadhh/ritapi-advanced
+#   cd ritapi-advanced && bash bootstrap.sh
 
 set -euo pipefail
 
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
 REPO_RAW="https://raw.githubusercontent.com/vadhh/ritapi-advanced/main"
+REPO_URL="https://github.com/vadhh/ritapi-advanced"
 COMPOSE_FILE="docker-compose.yml"
 ENV_FILE=".env"
-HEALTHZ_URL="http://localhost:8001/healthz"
-HEALTH_RETRIES=20
-HEALTH_WAIT=3
+DEFAULT_PORT="8001"
+HEALTH_RETRIES=24
+HEALTH_WAIT=5
 
 # ---------------------------------------------------------------------------
-# Colours
+# Colours (disabled when not a terminal)
 # ---------------------------------------------------------------------------
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
+if [[ -t 1 ]]; then
+    RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+    CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
+else
+    RED=''; GREEN=''; YELLOW=''; CYAN=''; BOLD=''; NC=''
+fi
 
-info()    { echo -e "${CYAN}▶ $*${NC}"; }
-success() { echo -e "${GREEN}✓ $*${NC}"; }
-warn()    { echo -e "${YELLOW}⚠ $*${NC}"; }
-die()     { echo -e "${RED}✗ $*${NC}" >&2; exit 1; }
+info()    { echo -e "${CYAN}▶  $*${NC}"; }
+success() { echo -e "${GREEN}✓  $*${NC}"; }
+warn()    { echo -e "${YELLOW}⚠  $*${NC}"; }
+die()     { echo -e "${RED}✗  $*${NC}" >&2; exit 1; }
+step()    { echo -e "\n${BOLD}$*${NC}"; echo "────────────────────────────────────────────"; }
 
+# ---------------------------------------------------------------------------
+# Argument parsing
+# ---------------------------------------------------------------------------
+MODE="install"        # install | upgrade | uninstall
+AUTO=false            # skip all prompts, auto-generate everything
+PINNED_VERSION=""     # empty = latest
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --auto)           AUTO=true ;;
+        --upgrade)        MODE="upgrade" ;;
+        --uninstall)      MODE="uninstall" ;;
+        --version)        PINNED_VERSION="$2"; shift ;;
+        --version=*)      PINNED_VERSION="${1#*=}" ;;
+        --help|-h)
+            echo "Usage: bash bootstrap.sh [--auto] [--upgrade] [--uninstall] [--version v1.2.2]"
+            exit 0 ;;
+        *) warn "Unknown flag: $1" ;;
+    esac
+    shift
+done
+
+# ---------------------------------------------------------------------------
+# When stdin is a pipe (curl|bash), redirect prompts to /dev/tty
+# so the user can still type interactively.
+# ---------------------------------------------------------------------------
+if [[ ! -t 0 ]] && [[ "$AUTO" == false ]]; then
+    if [[ -e /dev/tty ]]; then
+        exec < /dev/tty
+    else
+        warn "No terminal detected — switching to --auto mode."
+        AUTO=true
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# Banner
+# ---------------------------------------------------------------------------
 banner() {
     echo ""
-    echo -e "${BOLD}${CYAN}╔══════════════════════════════════════════╗${NC}"
-    echo -e "${BOLD}${CYAN}║      RitAPI Advanced — Bootstrap         ║${NC}"
-    echo -e "${BOLD}${CYAN}╚══════════════════════════════════════════╝${NC}"
+    echo -e "${BOLD}${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${BOLD}${CYAN}║     RitAPI Advanced — Installer            ║${NC}"
+    echo -e "${BOLD}${CYAN}╚════════════════════════════════════════════╝${NC}"
     echo ""
 }
 
@@ -39,45 +99,31 @@ banner() {
 # Prereq checks
 # ---------------------------------------------------------------------------
 check_prereqs() {
-    info "Checking prerequisites..."
-    command -v docker >/dev/null 2>&1 || die "Docker is not installed. See https://docs.docker.com/get-docker/"
+    step "Checking prerequisites"
 
-    # Compose v2 (plugin) or v1 (standalone)
+    command -v docker >/dev/null 2>&1 \
+        || die "Docker not found. Install: https://docs.docker.com/get-docker/"
+
     if docker compose version >/dev/null 2>&1; then
         COMPOSE_CMD="docker compose"
     elif command -v docker-compose >/dev/null 2>&1; then
         COMPOSE_CMD="docker-compose"
     else
-        die "Docker Compose not found. Install the Docker Compose plugin: https://docs.docker.com/compose/install/"
+        die "Docker Compose not found. Install: https://docs.docker.com/compose/install/"
     fi
 
-    command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || \
-        die "curl or wget required."
+    command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 \
+        || die "curl or wget is required."
 
-    success "Prerequisites OK (using: $COMPOSE_CMD)"
+    success "Docker OK  ($( docker --version | head -1 ))"
+    success "Compose OK (using: $COMPOSE_CMD)"
 }
 
 # ---------------------------------------------------------------------------
-# Download compose file if not already present
-# ---------------------------------------------------------------------------
-fetch_compose() {
-    if [[ -f "$COMPOSE_FILE" ]]; then
-        info "Found existing $COMPOSE_FILE — skipping download."
-        return
-    fi
-    info "Downloading $COMPOSE_FILE..."
-    if command -v curl >/dev/null 2>&1; then
-        curl -fsSL "$REPO_RAW/$COMPOSE_FILE" -o "$COMPOSE_FILE"
-    else
-        wget -qO "$COMPOSE_FILE" "$REPO_RAW/$COMPOSE_FILE"
-    fi
-    success "Downloaded $COMPOSE_FILE"
-}
-
-# ---------------------------------------------------------------------------
-# Generate a random hex secret
+# Helpers
 # ---------------------------------------------------------------------------
 gen_secret() {
+    # 64-char hex — works with openssl or python3
     if command -v openssl >/dev/null 2>&1; then
         openssl rand -hex 32
     else
@@ -85,47 +131,85 @@ gen_secret() {
     fi
 }
 
+fetch_url() {
+    local url="$1" dest="$2"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$url" -o "$dest"
+    else
+        wget -qO "$dest" "$url"
+    fi
+}
+
+prompt() {
+    # prompt <variable_name> <prompt_text> <default>
+    local var="$1" text="$2" default="$3"
+    if [[ "$AUTO" == true ]]; then
+        printf -v "$var" '%s' "$default"
+        return
+    fi
+    local input
+    read -rp "  ${text} [${default:0:8}…]: " input
+    printf -v "$var" '%s' "${input:-$default}"
+}
+
+prompt_plain() {
+    # prompt_plain <variable_name> <prompt_text> <default>
+    local var="$1" text="$2" default="$3"
+    if [[ "$AUTO" == true ]]; then
+        printf -v "$var" '%s' "$default"
+        return
+    fi
+    local input
+    read -rp "  ${text} [${default}]: " input
+    printf -v "$var" '%s' "${input:-$default}"
+}
+
 # ---------------------------------------------------------------------------
-# Build .env interactively
+# Download docker-compose.yml
+# ---------------------------------------------------------------------------
+fetch_compose() {
+    step "Fetching compose file"
+    local url
+    if [[ -n "$PINNED_VERSION" ]]; then
+        url="https://raw.githubusercontent.com/vadhh/ritapi-advanced/${PINNED_VERSION}/${COMPOSE_FILE}"
+    else
+        url="${REPO_RAW}/${COMPOSE_FILE}"
+    fi
+
+    if [[ -f "$COMPOSE_FILE" ]] && [[ "$MODE" != "upgrade" ]]; then
+        info "Found existing $COMPOSE_FILE — skipping download."
+    else
+        info "Downloading $COMPOSE_FILE${PINNED_VERSION:+ @ $PINNED_VERSION}..."
+        fetch_url "$url" "$COMPOSE_FILE"
+        success "Downloaded $COMPOSE_FILE"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Configure .env
 # ---------------------------------------------------------------------------
 configure_env() {
+    step "Configuration"
+
     if [[ -f "$ENV_FILE" ]]; then
-        warn ".env already exists — skipping configuration."
-        warn "Delete .env and re-run bootstrap.sh to reconfigure."
+        warn ".env already exists — keeping existing configuration."
+        warn "To reconfigure: rm .env && bash bootstrap.sh"
         return
     fi
 
-    echo ""
-    echo -e "${BOLD}Configuration${NC}"
-    echo "────────────────────────────────────────────"
-    echo "Press Enter to accept the auto-generated value."
-    echo ""
+    [[ "$AUTO" == true ]] && info "Auto mode — generating all secrets."
 
-    # SECRET_KEY
-    DEFAULT_SECRET_KEY=$(gen_secret)
-    read -rp "SECRET_KEY [auto]: " INPUT_SECRET_KEY
-    SECRET_KEY="${INPUT_SECRET_KEY:-$DEFAULT_SECRET_KEY}"
+    local SECRET_KEY ADMIN_SECRET REDIS_PASSWORD DASHBOARD_TOKEN PORT
 
-    # ADMIN_SECRET
-    DEFAULT_ADMIN_SECRET=$(gen_secret)
-    read -rp "ADMIN_SECRET [auto]: " INPUT_ADMIN_SECRET
-    ADMIN_SECRET="${INPUT_ADMIN_SECRET:-$DEFAULT_ADMIN_SECRET}"
-
-    # REDIS_PASSWORD
-    DEFAULT_REDIS_PASSWORD=$(gen_secret | cut -c1-24)
-    read -rp "REDIS_PASSWORD [auto]: " INPUT_REDIS_PASSWORD
-    REDIS_PASSWORD="${INPUT_REDIS_PASSWORD:-$DEFAULT_REDIS_PASSWORD}"
-
-    # DASHBOARD_TOKEN (optional)
-    read -rp "DASHBOARD_TOKEN (leave blank for open access): " DASHBOARD_TOKEN
-
-    # PORT
-    read -rp "Port to expose RitAPI on [8001]: " INPUT_PORT
-    PORT="${INPUT_PORT:-8001}"
+    prompt       SECRET_KEY     "SECRET_KEY   (JWT signing key)"  "$(gen_secret)"
+    prompt       ADMIN_SECRET   "ADMIN_SECRET (admin bootstrap)"  "$(gen_secret)"
+    prompt       REDIS_PASSWORD "REDIS_PASSWORD"                  "$(gen_secret | cut -c1-32)"
+    prompt_plain DASHBOARD_TOKEN "DASHBOARD_TOKEN (blank = open)" ""
+    prompt_plain PORT            "Expose on port"                  "$DEFAULT_PORT"
 
     cat > "$ENV_FILE" <<EOF
-# RitAPI Advanced — generated by bootstrap.sh
-# DO NOT commit this file to version control.
+# RitAPI Advanced — generated by bootstrap.sh $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+# KEEP THIS FILE SECRET — do not commit it to version control.
 
 SECRET_KEY=${SECRET_KEY}
 ADMIN_SECRET=${ADMIN_SECRET}
@@ -138,88 +222,149 @@ JWT_EXPIRE_MINUTES=60
 RATE_LIMIT_REQUESTS=100
 RATE_LIMIT_WINDOW=60
 EOF
+    chmod 600 "$ENV_FILE"
+    success ".env written (mode 600)"
 
-    success ".env written"
     echo ""
-    warn "Save these credentials — they will NOT be shown again:"
-    echo "  ADMIN_SECRET  = ${ADMIN_SECRET}"
-    [[ -n "$DASHBOARD_TOKEN" ]] && echo "  DASHBOARD_TOKEN = ${DASHBOARD_TOKEN}"
+    echo -e "${YELLOW}  ┌─ Save these — they will NOT be shown again ─────────┐${NC}"
+    echo -e "${YELLOW}  │  ADMIN_SECRET   = ${ADMIN_SECRET}  │${NC}"
+    [[ -n "$DASHBOARD_TOKEN" ]] && \
+    echo -e "${YELLOW}  │  DASHBOARD_TOKEN = ${DASHBOARD_TOKEN}  │${NC}"
+    echo -e "${YELLOW}  └──────────────────────────────────────────────────────┘${NC}"
     echo ""
 }
 
 # ---------------------------------------------------------------------------
-# Pull latest image
+# Pull image
 # ---------------------------------------------------------------------------
 pull_image() {
-    info "Pulling latest RitAPI Advanced image..."
+    step "Pulling image"
+    local image="ghcr.io/vadhh/ritapi-advanced"
+    local tag="${PINNED_VERSION:-latest}"
+    info "Pulling ${image}:${tag}..."
+
+    if [[ -n "$PINNED_VERSION" ]]; then
+        # Temporarily patch compose to use pinned tag
+        sed -i.bak "s|ritapi-advanced:latest|ritapi-advanced:${PINNED_VERSION}|g" "$COMPOSE_FILE" \
+            && rm -f "${COMPOSE_FILE}.bak"
+    fi
+
     $COMPOSE_CMD pull app
-    success "Image pulled"
+    success "Image ready"
 }
 
 # ---------------------------------------------------------------------------
-# Start services
+# Start / restart
 # ---------------------------------------------------------------------------
 start_services() {
-    info "Starting services..."
-    $COMPOSE_CMD up -d
+    step "Starting services"
+    $COMPOSE_CMD up -d --remove-orphans
     success "Services started"
 }
 
 # ---------------------------------------------------------------------------
-# Wait for health check
+# Health check
 # ---------------------------------------------------------------------------
 wait_healthy() {
-    info "Waiting for RitAPI Advanced to become healthy..."
+    step "Waiting for healthy state"
+    # Load PORT from .env if available
+    local port
+    port=$(grep -E "^PORT=" "$ENV_FILE" 2>/dev/null | cut -d= -f2 || echo "$DEFAULT_PORT")
+    local url="http://localhost:${port}/healthz"
+
+    echo -n "  "
     for i in $(seq 1 $HEALTH_RETRIES); do
-        STATUS=$(curl -sf "$HEALTHZ_URL" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || true)
-        if [[ "$STATUS" == "ok" ]]; then
-            success "RitAPI Advanced is healthy"
+        local status
+        status=$(curl -sf "$url" 2>/dev/null \
+            | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" \
+            2>/dev/null || true)
+        if [[ "$status" == "ok" ]]; then
+            echo ""
+            success "RitAPI Advanced is healthy at $url"
             return
         fi
         echo -n "."
         sleep $HEALTH_WAIT
     done
     echo ""
-    warn "Health check timed out. Check logs with: $COMPOSE_CMD logs app"
+    warn "Health check timed out after $((HEALTH_RETRIES * HEALTH_WAIT))s."
+    warn "Check logs: $COMPOSE_CMD logs app"
+    warn "Check status: $COMPOSE_CMD ps"
 }
 
 # ---------------------------------------------------------------------------
-# Print completion summary
+# Completion summary
 # ---------------------------------------------------------------------------
 print_summary() {
-    # Read back values from .env for display
-    # shellcheck disable=SC1090
-    source "$ENV_FILE" 2>/dev/null || true
+    local port
+    port=$(grep -E "^PORT=" "$ENV_FILE" 2>/dev/null | cut -d= -f2 || echo "$DEFAULT_PORT")
 
     echo ""
-    echo -e "${BOLD}${GREEN}╔══════════════════════════════════════════╗${NC}"
-    echo -e "${BOLD}${GREEN}║        Installation complete! 🚀         ║${NC}"
-    echo -e "${BOLD}${GREEN}╚══════════════════════════════════════════╝${NC}"
+    echo -e "${BOLD}${GREEN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${BOLD}${GREEN}║        Installation complete! 🚀           ║${NC}"
+    echo -e "${BOLD}${GREEN}╚════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "${BOLD}Endpoints${NC}"
-    echo "  API      →  http://localhost:${PORT:-8001}"
-    echo "  Health   →  http://localhost:${PORT:-8001}/healthz"
-    echo "  Metrics  →  http://localhost:${PORT:-8001}/metrics"
-    echo "  Docs     →  http://localhost:${PORT:-8001}/docs"
-    echo "  Dashboard→  http://localhost:${PORT:-8001}/dashboard"
+    echo -e "${BOLD}  Endpoints${NC}"
+    echo "    Health     http://localhost:${port}/healthz"
+    echo "    API docs   http://localhost:${port}/docs"
+    echo "    Dashboard  http://localhost:${port}/dashboard"
+    echo "    Metrics    http://localhost:${port}/metrics"
     echo ""
-    echo -e "${BOLD}First steps${NC}"
-    echo "  # Get an admin JWT:"
-    echo "  curl -X POST http://localhost:${PORT:-8001}/admin/token \\"
-    echo "    -H \"X-Admin-Secret: \$ADMIN_SECRET\""
+    echo -e "${BOLD}  First — get an admin token${NC}"
+    echo "    source .env"
+    echo "    curl -X POST http://localhost:${port}/admin/token \\"
+    echo "      -H \"X-Admin-Secret: \$ADMIN_SECRET\""
     echo ""
-    echo "  # Issue an API key:"
-    echo "  curl -X POST http://localhost:${PORT:-8001}/admin/apikey \\"
-    echo "    -H \"X-Admin-Secret: \$ADMIN_SECRET\" \\"
-    echo "    -H \"Content-Type: application/json\" \\"
-    echo "    -d '{\"subject\": \"myapp\", \"role\": \"VIEWER\"}'"
+    echo -e "${BOLD}  Then — issue an API key for your client${NC}"
+    echo "    curl -X POST http://localhost:${port}/admin/apikey \\"
+    echo "      -H \"X-Admin-Secret: \$ADMIN_SECRET\" \\"
+    echo "      -H \"Content-Type: application/json\" \\"
+    echo "      -d '{\"subject\": \"myapp\", \"role\": \"VIEWER\"}'"
     echo ""
-    echo -e "${BOLD}Useful commands${NC}"
-    echo "  $COMPOSE_CMD logs -f app       # live logs"
-    echo "  $COMPOSE_CMD ps                # service status"
-    echo "  $COMPOSE_CMD down              # stop"
-    echo "  $COMPOSE_CMD pull && $COMPOSE_CMD up -d   # upgrade"
+    echo -e "${BOLD}  Day-to-day commands${NC}"
+    echo "    $COMPOSE_CMD logs -f app           # live logs"
+    echo "    $COMPOSE_CMD ps                    # service status"
+    echo "    $COMPOSE_CMD down                  # stop"
+    echo "    bash bootstrap.sh --upgrade        # upgrade to latest"
+    echo "    bash bootstrap.sh --uninstall      # remove everything"
     echo ""
+    echo "  Full manual: ${REPO_URL}/blob/main/docs/MANUAL.md"
+    echo ""
+}
+
+# ---------------------------------------------------------------------------
+# Upgrade
+# ---------------------------------------------------------------------------
+do_upgrade() {
+    step "Upgrading RitAPI Advanced"
+    [[ -f "$COMPOSE_FILE" ]] || die "No $COMPOSE_FILE found. Run bootstrap.sh without --upgrade first."
+    info "Pulling latest image..."
+    $COMPOSE_CMD pull app
+    info "Restarting app container..."
+    $COMPOSE_CMD up -d --no-deps app
+    wait_healthy
+    success "Upgrade complete"
+    local port
+    port=$(grep -E "^PORT=" "$ENV_FILE" 2>/dev/null | cut -d= -f2 || echo "$DEFAULT_PORT")
+    echo ""
+    echo "  Running version: $($COMPOSE_CMD exec app python3 -c 'from app import __version__; print(__version__)' 2>/dev/null || echo 'unknown')"
+    echo ""
+}
+
+# ---------------------------------------------------------------------------
+# Uninstall
+# ---------------------------------------------------------------------------
+do_uninstall() {
+    step "Uninstalling RitAPI Advanced"
+    warn "This will stop and remove all containers and volumes."
+    if [[ "$AUTO" == false ]]; then
+        read -rp "  Continue? [y/N]: " confirm
+        [[ "$confirm" =~ ^[Yy]$ ]] || { info "Cancelled."; exit 0; }
+    fi
+    [[ -f "$COMPOSE_FILE" ]] && $COMPOSE_CMD down -v --remove-orphans
+    success "Containers and volumes removed"
+    info "The .env file and $COMPOSE_FILE were left in place."
+    info "Remove them manually if no longer needed."
 }
 
 # ---------------------------------------------------------------------------
@@ -227,9 +372,21 @@ print_summary() {
 # ---------------------------------------------------------------------------
 banner
 check_prereqs
-fetch_compose
-configure_env
-pull_image
-start_services
-wait_healthy
-print_summary
+
+case "$MODE" in
+    install)
+        fetch_compose
+        configure_env
+        pull_image
+        start_services
+        wait_healthy
+        print_summary
+        ;;
+    upgrade)
+        fetch_compose
+        do_upgrade
+        ;;
+    uninstall)
+        do_uninstall
+        ;;
+esac

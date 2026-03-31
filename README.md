@@ -1,26 +1,230 @@
-# RitAPI Advanced — API & IP Protection System
+# RitAPI Advanced
 
-Standalone FastAPI service providing layer-7 API protection.
+**Layer-7 API protection as a drop-in service.**
+Sits in front of your API and enforces WAF, rate limiting, bot detection, injection/exfiltration detection, JWT/API-key auth, RBAC, and policy-driven decisions — without touching your application code.
 
-## Features (PRD)
-- Rate limiting (per-IP and per-API-key, Redis-backed)
-- Payload validation (Pydantic schemas)
-- Injection detection: XSS, SQLi, CMDi, path traversal, LDAP (regex + YARA)
-- JWT and API key authentication with 5-level RBAC
-- Bot detection: rapid-fire, endpoint scanning, suspicious UA, error-rate anomalies
-- Data exfiltration detection
-- Logs to `/var/log/ritapi_advanced.jsonl`
-- Prometheus metrics export
+[![CI](https://github.com/vadhh/ritapi-advanced/actions/workflows/ci.yml/badge.svg)](https://github.com/vadhh/ritapi-advanced/actions/workflows/ci.yml)
+[![Docker](https://ghcr.io/vadhh/ritapi-advanced)](https://github.com/vadhh/ritapi-advanced/pkgs/container/ritapi-advanced)
+[![PyPI](https://img.shields.io/pypi/v/ritapi-advanced)](https://pypi.org/project/ritapi-advanced/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-## Implementation Status
-All modules are scaffolded. See `# TODO` comments in each file.
-WAF patterns to port from: `_archive/ritapi_v/ritapi/utils/waf.py`
-Bot detection to port from: `_archive/ritapi_v/ritapi/utils/behaviour_detection.py`
+---
 
-## Run
+## Install in one line
+
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env  # edit as needed
-uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+curl -sSL https://raw.githubusercontent.com/vadhh/ritapi-advanced/main/bootstrap.sh | bash
 ```
+
+The installer:
+- Checks Docker and Docker Compose are present
+- Generates cryptographically random secrets for you
+- Writes a `.env` file
+- Pulls the pre-built image from GHCR
+- Starts the service and waits for a healthy state
+- Prints your first-steps instructions
+
+> **Prefer to inspect first?**
+> ```bash
+> curl -sSL https://raw.githubusercontent.com/vadhh/ritapi-advanced/main/bootstrap.sh -o bootstrap.sh
+> less bootstrap.sh          # review it
+> bash bootstrap.sh          # run it
+> ```
+
+---
+
+## What it does
+
+```
+Your client  →  RitAPI Advanced  →  Your API
+                     │
+              ┌──────┴──────────────────────────────────┐
+              │  RateLimitMiddleware   (outermost)       │
+              │  AuthMiddleware        (JWT / API key)   │
+              │  BotDetectionMiddleware                  │
+              │  InjectionDetectionMiddleware (WAF)      │
+              │  ExfiltrationDetectionMiddleware         │
+              │  DecisionEngineMiddleware  (innermost)   │
+              │         ↓ policy dispatch                │
+              │    block / throttle / monitor / allow    │
+              └─────────────────────────────────────────┘
+```
+
+| Protection | What it checks |
+|---|---|
+| **Rate limiting** | Per-IP and per-API-key request counts (Redis); throttle halves the limit |
+| **Authentication** | JWT Bearer token or `X-API-Key` header; 5-level RBAC |
+| **Bot detection** | 13 rules: rapid-fire, burst, endpoint scanning, suspicious/missing UA, error rates |
+| **Injection (WAF)** | 96 regex patterns: XSS, SQLi, CMDi, path traversal, LDAP + YARA rules |
+| **Exfiltration** | Bulk access, sequential crawling, large response, high volume per IP |
+| **Policy engine** | Per-route YAML policies map each detection type to block/throttle/monitor/allow |
+
+---
+
+## Requirements
+
+- Docker 24+ and Docker Compose v2 (or Compose v1 `docker-compose`)
+- Linux, macOS, or Windows with WSL2
+- Outbound HTTPS to pull the image from `ghcr.io`
+
+---
+
+## Quick start
+
+### 1. Install
+
+```bash
+curl -sSL https://raw.githubusercontent.com/vadhh/ritapi-advanced/main/bootstrap.sh | bash
+```
+
+### 2. Get an admin token
+
+```bash
+source .env
+curl -s -X POST http://localhost:8001/admin/token \
+  -H "X-Admin-Secret: $ADMIN_SECRET" | jq .
+```
+
+### 3. Issue an API key for your client app
+
+```bash
+curl -s -X POST http://localhost:8001/admin/apikey \
+  -H "X-Admin-Secret: $ADMIN_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"subject": "myapp", "role": "VIEWER"}' | jq .
+```
+
+### 4. Make a protected request
+
+```bash
+# With JWT
+curl http://localhost:8001/api/v1/health \
+  -H "Authorization: Bearer <token>"
+
+# With API key
+curl http://localhost:8001/api/v1/health \
+  -H "X-API-Key: <api_key>"
+```
+
+---
+
+## Installer options
+
+```bash
+# Non-interactive — auto-generate all secrets, no prompts
+curl -sSL .../bootstrap.sh | bash -s -- --auto
+
+# Pin a specific version
+curl -sSL .../bootstrap.sh | bash -s -- --version v1.2.2
+
+# Upgrade to latest (pull image, restart)
+bash bootstrap.sh --upgrade
+
+# Remove containers and volumes
+bash bootstrap.sh --uninstall
+```
+
+---
+
+## Configuration
+
+All settings are in `.env` (generated by the installer). Key variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `SECRET_KEY` | *(generated)* | JWT signing key — keep secret |
+| `ADMIN_SECRET` | *(generated)* | Bootstrap credential for `/admin/*` |
+| `REDIS_PASSWORD` | *(generated)* | Internal Redis auth |
+| `DASHBOARD_TOKEN` | *(empty = open)* | Bearer token to protect `/dashboard` |
+| `RATE_LIMIT_REQUESTS` | `100` | Max requests per IP per window |
+| `RATE_LIMIT_WINDOW` | `60` | Rate limit window in seconds |
+| `JWT_EXPIRE_MINUTES` | `60` | Token lifetime |
+| `PORT` | `8001` | Host port to expose |
+
+---
+
+## Upgrade
+
+```bash
+bash bootstrap.sh --upgrade
+```
+
+Or manually:
+
+```bash
+docker compose pull app
+docker compose up -d --no-deps app
+```
+
+---
+
+## Other install methods
+
+### Helm (Kubernetes)
+
+```bash
+helm repo add ritapi https://vadhh.github.io/ritapi-advanced/charts
+helm repo update
+helm install ritapi ritapi/ritapi-advanced \
+  --set secrets.secretKey=$(openssl rand -hex 32) \
+  --set secrets.adminSecret=$(openssl rand -hex 32) \
+  --set ingress.enabled=true \
+  --set ingress.hosts[0].host=ritapi.example.com
+```
+
+### Python package (embed in your own app)
+
+```bash
+pip install ritapi-advanced
+```
+
+```python
+from app.middlewares.decision_engine import DecisionEngineMiddleware
+from app.middlewares.injection_detection import InjectionDetectionMiddleware
+app.add_middleware(DecisionEngineMiddleware)
+app.add_middleware(InjectionDetectionMiddleware)
+```
+
+---
+
+## Endpoints
+
+| Endpoint | Description |
+|---|---|
+| `GET /healthz` | Health check — no auth required |
+| `GET /metrics` | Prometheus metrics scrape |
+| `GET /docs` | Swagger UI |
+| `GET /dashboard` | Live security dashboard |
+| `POST /admin/token` | Issue a JWT (requires `X-Admin-Secret`) |
+| `POST /admin/apikey` | Issue an API key |
+| `POST /admin/apikey/rotate` | Rotate an API key atomically |
+| `DELETE /admin/apikey` | Revoke an API key |
+
+---
+
+## Monitoring
+
+RitAPI exports Prometheus metrics at `/metrics`. Dashboards and alert rules for Grafana are in `docker/grafana/` and `docker/prometheus/`.
+
+```bash
+# Start full observability stack (app + Redis + Prometheus + Grafana)
+docker compose -f docker/app.yml --env-file .env.staging up -d
+```
+
+---
+
+## Documentation
+
+| Doc | Description |
+|---|---|
+| [MANUAL.md](docs/MANUAL.md) | Full user and operator manual |
+| [RUNBOOK.md](docs/RUNBOOK.md) | On-call runbook and incident procedures |
+| [INSTALL.md](docs/INSTALL.md) | Detailed install options (bare-metal, Helm, CI) |
+| [CONFIGURATION.md](docs/CONFIGURATION.md) | All environment variables and policy YAML reference |
+| [PENTEST.md](docs/PENTEST.md) | Penetration testing guide |
+
+---
+
+## License
+
+MIT © vadhh
