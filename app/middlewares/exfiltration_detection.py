@@ -57,14 +57,19 @@ def _incr(redis, key: str, ttl: int) -> int:
 def _incrby(redis, key: str, amount: int, ttl: int) -> int:
     """Increment key by amount, setting TTL only if not already set (atomic via pipeline).
 
-    Uses EXPIRE key ttl NX to set TTL atomically only on first write, eliminating
-    the race condition from checking `if val == amount` with variable byte amounts.
-    Requires Redis 7+ for NX support.
+    Prefers EXPIRE NX (Redis 7+) for true atomicity. Falls back to a TTL check
+    for Redis < 7: sets TTL only when the key has no existing expiry (TTL == -1).
     """
     pipe = redis.pipeline()
     pipe.incrby(key, amount)
-    pipe.expire(key, ttl, nx=True)  # NX: set only if no TTL exists — Redis 7+
-    results = pipe.execute()
+    try:
+        pipe.expire(key, ttl, nx=True)  # NX: set only if no TTL exists — Redis 7+
+        results = pipe.execute()
+    except Exception:
+        # Redis < 7 doesn't support EXPIRE NX — fall back to conditional set
+        results = pipe.execute()
+        if redis.ttl(key) == -1:  # key exists but has no TTL
+            redis.expire(key, ttl)
     return results[0]
 
 

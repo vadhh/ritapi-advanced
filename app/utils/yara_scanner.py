@@ -16,14 +16,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+logger = logging.getLogger(__name__)
+
 try:
     import yara
     YARA_AVAILABLE = True
 except ImportError:
     YARA_AVAILABLE = False
     yara = None  # type: ignore[assignment]
-
-logger = logging.getLogger(__name__)
+    logger.warning("yara-python not installed — YARA scanning disabled at startup (R2-M-4)")
 
 
 @dataclass
