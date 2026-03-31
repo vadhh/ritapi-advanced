@@ -35,47 +35,55 @@ logger = logging.getLogger(__name__)
 
 
 class DecisionEngineMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(self, request: Request, handler):
         # Resolve route and attach policy to request state for other middlewares
         route = resolve_route(request.url.path, request.method)
         policy = get_policy(route.policy if route else None)
         request.state.route = route
         request.state.policy = policy
 
-        response = await call_next(request)
-
         ip = (
             (request.headers.get("x-forwarded-for", "").split(",")[0].strip())
             or (request.client.host if request.client else "unknown")
         )
 
-        # Legacy block flag — immediate block
-        if getattr(request.state, "block", False):
-            reason = getattr(request.state, "block_reason", "Security policy violation")
-            return self._block_response(request, ip, reason, "decision_engine", 1.0)
-
-        # Process detections from upstream middlewares
+        # --- PRE-REQUEST: process detections from outer middlewares ---
+        # Outer middlewares execute their pre-request code and write to
+        # request.state.detections BEFORE call_next reaches us here.
+        # We process them now so the route handler never runs for blocked requests.
         detections = getattr(request.state, "detections", [])
         for detection in detections:
             det_type = detection.get("type", "unknown")
             score = detection.get("score", 0.0)
             reason = detection.get("reason", "")
+            status_code = detection.get("status_code", 403)
             action = policy.decision_actions.get_action(det_type)
 
             if action == "block":
-                return self._block_response(request, ip, reason, det_type, score)
+                return self._block_response(request, ip, reason, det_type, score, status_code)
+            elif action == "throttle":
+                self._apply_throttle(request, ip, reason, det_type, score)
             elif action == "monitor":
                 self._log_monitor(request, ip, reason, det_type, score)
-            elif action == "throttle":
-                self._log_monitor(request, ip, reason, det_type, score)
-                # Mark for throttling — rate limit middleware reads this on next request
-                # The throttle is informational on the current response
             # action == "allow" → no-op
 
-        return response
+        # Legacy block flag support
+        if getattr(request.state, "block", False):
+            reason = getattr(request.state, "block_reason", "Security policy violation")
+            return self._block_response(request, ip, reason, "decision_engine", 1.0, 403)
+
+        # Route handler executes only if no block
+        call_next = handler
+        return await call_next(request)
 
     def _block_response(
-        self, request: Request, ip: str, reason: str, det_type: str, score: float
+        self,
+        request: Request,
+        ip: str,
+        reason: str,
+        det_type: str,
+        score: float,
+        status_code: int = 403,
     ) -> JSONResponse:
         logger.warning(
             "DecisionEngine: blocking %s %s from %s — %s",
@@ -90,10 +98,18 @@ class DecisionEngineMiddleware(BaseHTTPMiddleware):
             score=score,
             reasons=reason,
         )
+        error_msg = "Too Many Requests" if status_code == 429 else "Forbidden"
         return JSONResponse(
-            {"error": "Forbidden", "detail": reason},
-            status_code=403,
+            {"error": error_msg, "detail": reason},
+            status_code=status_code,
         )
+
+    def _apply_throttle(
+        self, request: Request, ip: str, reason: str, det_type: str, score: float
+    ) -> None:
+        """Mark this IP for throttling — rate_limit reads this on next request."""
+        self._log_monitor(request, ip, reason, det_type, score)
+        # Full Redis implementation added in Task C3
 
     def _log_monitor(
         self, request: Request, ip: str, reason: str, det_type: str, score: float
