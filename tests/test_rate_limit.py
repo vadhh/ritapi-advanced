@@ -5,7 +5,10 @@ Note: conftest sets RATE_LIMIT_REQUESTS=20 so rate limit fires before
 exfiltration's bulk_access threshold (50). Tests use /dashboard (not /healthz,
 which is in the rate limit skip list).
 """
+import inspect
 import os
+
+from app.middlewares.rate_limit import RateLimitMiddleware
 
 UA = "pytest-test-client/1.0"
 
@@ -72,8 +75,6 @@ def test_api_key_not_in_redis_key_name(flush_test_redis):
 
 def test_rate_limit_writes_to_state_detections():
     """RateLimitMiddleware must write to request.state.detections."""
-    import inspect
-    from app.middlewares.rate_limit import RateLimitMiddleware
     source = inspect.getsource(RateLimitMiddleware.dispatch)
     assert "request.state.detections" in source, (
         "RateLimitMiddleware must write to request.state.detections"

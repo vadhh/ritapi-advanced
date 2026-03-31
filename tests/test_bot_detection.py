@@ -8,11 +8,14 @@ X-Forwarded-For headers to avoid the testclient bypass IP.
 Bot detection bypass IPs (from conftest): 127.0.0.1, ::1, testclient.
 Integration tests use 10.99.bot.X IPs which are NOT bypassed.
 """
+import inspect
+
 import pytest
 
 from app.middlewares.bot_detection import (
     BLOCK_THRESHOLD,
     RULES,
+    BotDetectionMiddleware,
     _accumulate_risk,
     _detect,
     _is_suspicious_ua,
@@ -272,8 +275,6 @@ def test_clean_request_not_blocked(client, redis):
 
 def test_bot_blocked_before_route_executes(flush_test_redis):
     """Block threshold check must appear BEFORE call_next in dispatch."""
-    import inspect
-    from app.middlewares.bot_detection import BotDetectionMiddleware
     source = inspect.getsource(BotDetectionMiddleware.dispatch)
     call_next_pos = source.index("response = await call_next")
     block_threshold_pos = source.index("BLOCK_THRESHOLD")

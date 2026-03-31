@@ -10,6 +10,8 @@ Thresholds (from exfiltration_detection.py):
   LARGE_RESPONSE_BYTES      = 1MB  → monitor (not block)
   VOLUME_THRESHOLD_BYTES    = 10MB → monitor (not block)
 """
+import inspect
+
 from app.middlewares.exfiltration_detection import (
     BULK_ACCESS_THRESHOLD,
     CRAWL_ENDPOINT_THRESHOLD,
@@ -80,7 +82,7 @@ def test_incrby_sets_ttl_atomically_on_first_write(flush_test_redis, redis):
     val2 = _incrby(redis, key, 1000, 60)
     assert val2 == 6000
     ttl2 = redis.ttl(key)
-    assert ttl2 > 0, f"TTL must still be set after second write"
+    assert ttl2 > 0, "TTL must still be set after second write"
     # TTL should NOT have been reset to 60; it should be <= original TTL
     assert ttl2 <= ttl + 1, f"TTL was reset on second write: {ttl} -> {ttl2}, expected no reset"
 
@@ -190,7 +192,6 @@ def test_volume_threshold_value():
 
 def test_bulk_access_check_before_route_executes(flush_test_redis):
     """bulk_access string must appear BEFORE call_next in dispatch source."""
-    import inspect
     from app.middlewares.exfiltration_detection import ExfiltrationDetectionMiddleware
     source = inspect.getsource(ExfiltrationDetectionMiddleware.dispatch)
     call_next_pos = source.index("await call_next")

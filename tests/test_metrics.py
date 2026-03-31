@@ -2,15 +2,15 @@
 import re
 from pathlib import Path
 
-import pytest
 import yaml
 
 
 def _get_registered_metric_names():
     """Import metrics module and return all registered base metric names."""
     # Import metrics to trigger registration
-    import app.utils.metrics  # noqa: F401
     import prometheus_client
+
+    import app.utils.metrics  # noqa: F401
     return set(prometheus_client.REGISTRY._names_to_collectors.keys())
 
 

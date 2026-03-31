@@ -1,9 +1,12 @@
 """
 Tests for injection detection (WAF) middleware.
 """
+import inspect
 import json
 
 import pytest
+
+from app.middlewares.injection_detection import InjectionDetectionMiddleware
 
 UA = "pytest-test-client/1.0"
 
@@ -139,8 +142,6 @@ def test_nested_xss_in_json_blocked(client, auth_headers):
 
 def test_injection_writes_to_state_detections():
     """InjectionDetectionMiddleware must write to request.state.detections."""
-    import inspect
-    from app.middlewares.injection_detection import InjectionDetectionMiddleware
     source = inspect.getsource(InjectionDetectionMiddleware.dispatch)
     assert "request.state.detections" in source, (
         "InjectionDetectionMiddleware must write to request.state.detections"
