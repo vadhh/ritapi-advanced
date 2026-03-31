@@ -77,3 +77,29 @@ Audit performed: 2026-03-30
 - [x] **L-9** — Typo in Helm `values.yaml` image repository: `ritapi-advance` should be `ritapi-advanced` — default Helm install pulls from a non-existent image. (`helm/ritapi-advanced/values.yaml:7`)
 
 - [x] **L-10** — Missing test coverage: no tests for `DecisionEngineMiddleware` policy dispatch, `SchemaEnforcementMiddleware`, API key rotation atomicity, or dashboard with `DASHBOARD_TOKEN` set. (`tests/`)
+
+---
+
+## Audit Round 2 — 2026-03-31
+
+### High
+
+- [x] **R2-H-1** — Rate limit `incr + expire` TTL race condition: `redis.incr()` then `if current == 1: redis.expire()` is non-atomic — if the connection drops between calls, the key has no TTL and persists forever (same class of bug as H-4 fixed in exfil). (`app/middlewares/rate_limit.py:87-89`)
+
+- [x] **R2-H-2** — `EXPIRE NX` requires Redis 7+: `pipe.expire(key, ttl, nx=True)` silently fails or raises on Redis < 7 — no version check or fallback. (`app/middlewares/exfiltration_detection.py:66`)
+
+### Medium
+
+- [x] **R2-M-1** — `redis.keys()` blocks Redis on every dashboard stats call: three O(N) `KEYS` scans on `/dashboard/stats` cause latency spikes under large keyspaces — should use `SCAN`. (`app/web/dashboard.py:108-110`)
+
+- [x] **R2-M-2** — Schema enforcement silently skips on unknown schema name: typo in policy YAML disables schema validation with only a warning — no startup validation. (`app/middlewares/schema_enforcement.py:42-44`)
+
+- [x] **R2-M-3** — `limit` parameter has no lower bound: `min(limit, 500)` allows `limit=0` or negative values, returning empty list silently. (`app/web/dashboard.py:150-151`)
+
+- [x] **R2-M-4** — YARA disabled silently at import time: `YARA_AVAILABLE=False` set with no startup log — warning only fires on first scan attempt. (`app/utils/yara_scanner.py:21-23`)
+
+### Low
+
+- [x] **R2-L-1** — `"testclient"` in `BOT_DETECTION_BYPASS_IPS` is not a valid IP address. (`tests/conftest.py:18`)
+
+- [x] **R2-L-2** — Dockerfile tests 3.11 in CI but builds image on 3.12 — 3.11 CI runs provide no coverage for the deployed image. (`Dockerfile:16`, `.github/workflows/ci.yml:80`)

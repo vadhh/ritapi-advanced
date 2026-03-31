@@ -40,7 +40,11 @@ def _resolve_schema(schema_name: str):
         if cls is not None:
             _schema_cache[schema_name] = cls
             return cls
-        logger.warning("Schema class '%s' not found in app.schemas.payload_schema", schema_name)
+        logger.error(
+            "Schema class '%s' not found in app.schemas.payload_schema — "
+            "schema enforcement DISABLED for this route. Fix the policy YAML. (R2-M-2)",
+            schema_name,
+        )
     except Exception:
         logger.exception("Failed to import schema module")
     return None

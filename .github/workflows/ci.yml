@@ -77,7 +77,8 @@ jobs:
 
     strategy:
       matrix:
-        python-version: ["3.11", "3.12"]
+        # Image is built on Python 3.12 (see Dockerfile) — test only that version (R2-L-2)
+        python-version: ["3.12"]
 
     services:
       redis:

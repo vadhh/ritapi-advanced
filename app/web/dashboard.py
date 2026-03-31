@@ -105,14 +105,15 @@ def _redis_stats() -> dict[str, Any]:
         return {"connected": False, "rate_limited_ips": 0, "bot_risk_ips": 0, "api_keys": 0}
 
     try:
-        rate_keys = redis.keys("ritapi:rate:ip:*")
-        bot_keys = redis.keys("bot:risk:*")
-        api_key_keys = redis.keys("ritapi:apikey:*")
+        # Use SCAN instead of KEYS to avoid blocking Redis on large keyspaces (R2-M-1)
+        rate_count = sum(1 for _ in redis.scan_iter("ritapi:rate:ip:*"))
+        bot_count = sum(1 for _ in redis.scan_iter("bot:risk:*"))
+        api_key_count = sum(1 for _ in redis.scan_iter("ritapi:apikey:*"))
         return {
             "connected": True,
-            "rate_limited_ips": len(rate_keys),
-            "bot_risk_ips": len(bot_keys),
-            "api_keys": len(api_key_keys),
+            "rate_limited_ips": rate_count,
+            "bot_risk_ips": bot_count,
+            "api_keys": api_key_count,
         }
     except Exception as e:
         logger.error("Redis stats error: %s", e)
@@ -148,7 +149,7 @@ async def dashboard_page(request: Request, _: None = Depends(_require_dashboard_
 
 @router.get("/events")
 async def dashboard_events(limit: int = 100, _: None = Depends(_require_dashboard_access)):
-    events = _tail_jsonl(_LOG_PATH, min(limit, 500))
+    events = _tail_jsonl(_LOG_PATH, max(1, min(limit, 500)))
     return JSONResponse({"events": events, "total": len(events)})
 
 
