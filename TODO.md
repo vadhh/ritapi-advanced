@@ -38,17 +38,17 @@ Audit performed: 2026-03-30
 
 - [x] **M-2** — `DASHBOARD_TOKEN` absent from all deployment templates: missing from `.env.example`, `.env.staging`, and Helm ConfigMap — dashboard deploys with no auth by default. (`.env.example`, `helm/ritapi-advanced/templates/configmap.yaml`)
 
-- [ ] **M-3** — `ADMIN_SECRET` missing from `.env.example`: operators following the example file will deploy with admin bootstrap auth silently disabled. (`.env.example`)
+- [x] **M-3** — `ADMIN_SECRET` missing from `.env.example`: operators following the example file will deploy with admin bootstrap auth silently disabled. (`.env.example`)
 
-- [ ] **M-4** — `_tail_jsonl` silently returns fewer than N events for long log lines: 300-byte-per-line estimate causes silent truncation with no indication. (`app/web/dashboard.py:66-67`)
+- [x] **M-4** — `_tail_jsonl` silently returns fewer than N events for long log lines: 300-byte-per-line estimate causes silent truncation with no indication. (`app/web/dashboard.py:66-67`)
 
-- [ ] **M-5** — Test fixture scope mismatch: `flush_test_redis` is function-scoped but depends on session-scoped `redis` fixture — failover tests that call `mark_failed()` can dirty subsequent tests. (`tests/conftest.py:50-57`)
+- [x] **M-5** — Test fixture scope mismatch: `flush_test_redis` is function-scoped but depends on session-scoped `redis` fixture — failover tests that call `mark_failed()` can dirty subsequent tests. (`tests/conftest.py:50-57`)
 
-- [ ] **M-6** — Double body read relies on Starlette internal caching: `SchemaEnforcementMiddleware` and `InjectionDetectionMiddleware` both read the request body — fragile coupling to Starlette's `_body` caching behavior. (`app/middlewares/schema_enforcement.py:66`, `app/middlewares/injection_detection.py:234`)
+- [x] **M-6** — Double body read relies on Starlette internal caching: `SchemaEnforcementMiddleware` and `InjectionDetectionMiddleware` both read the request body — fragile coupling to Starlette's `_body` caching behavior. (`app/middlewares/schema_enforcement.py:66`, `app/middlewares/injection_detection.py:234`)
 
 - [x] **M-7** — Injection blocks bypass `DecisionEngineMiddleware` entirely: injection middleware returns directly without calling `call_next`, so `request.state.policy` and `request.state.route` are never set for blocked requests. (`app/middlewares/injection_detection.py:221-280`)
 
-- [ ] **M-8** — Per-process singletons unreliable with multiple workers: YARA scanner, Redis client, and policy/route caches are per-process — hot-reload via SIGHUP or `reload_policies()` only affects one worker under `uvicorn --workers 2`. (`app/utils/yara_scanner.py:183`, `Dockerfile:72`)
+- [x] **M-8** — Per-process singletons unreliable with multiple workers: YARA scanner, Redis client, and policy/route caches are per-process — hot-reload via SIGHUP or `reload_policies()` only affects one worker under `uvicorn --workers 2`. (`app/utils/yara_scanner.py:183`, `Dockerfile:72`) — documented in `docs/RUNBOOK.md §10`; full fix requires IPC/shared cache (planned)
 
 - [x] **M-9** — Redis DB mismatch between local and CI: tests use DB 15 locally but DB 1 in CI — `flushdb()` in CI could destroy unrelated data if DB 1 has pre-existing state. (`tests/conftest.py:15`, `.github/workflows/ci.yml:113`)
 
@@ -58,21 +58,21 @@ Audit performed: 2026-03-30
 
 ## Low
 
-- [ ] **L-1** — Developer username and filesystem path committed in `.env`: `LOG_PATH=/home/stardhoom/...` exposes developer info. (`.env:10`)
+- [x] **L-1** — Developer username and filesystem path committed in `.env`: `LOG_PATH=/home/stardhoom/...` exposes developer info. (`.env:10`) — `.env` removed from git tracking; LOG_PATH corrected to `/var/log/ritapi_advanced.jsonl`
 
 - [x] **L-2** — Broken `ritapi` CLI entry point in `pyproject.toml`: points to `app.main:app` (a FastAPI instance), not a callable — `ritapi` command does not work. (`pyproject.toml:56`)
 
 - [x] **L-3** — Test dependencies bundled in production image: `pytest`, `pytest-anyio`, `anyio`, `pytest-cov` are in `requirements.txt` and installed into the Docker image. (`requirements.txt:13-16`)
 
-- [ ] **L-4** — `XSS_Dangerous_Tags` YARA rule too broad: `2 of them` condition matches normal HTML containing e.g. `<details>` and `<svg>` — high false-positive risk for CMS or rich-text payloads. (`rules/xss.yar:92`)
+- [x] **L-4** — `XSS_Dangerous_Tags` YARA rule too broad: `2 of them` condition matches normal HTML containing e.g. `<details>` and `<svg>` — high false-positive risk for CMS or rich-text payloads. (`rules/xss.yar:92`)
 
 - [x] **L-5** — `throttle` action in policy is a documented no-op: `on_rate_limit: throttle` in `auth.yml` has the same effect as `allow`. (`configs/policies/auth.yml:18`, `app/middlewares/decision_engine.py:69-72`)
 
-- [ ] **L-6** — `autouse` Redis flush skips entire test suite if Redis is unavailable: pure unit tests (WAF regex, JWT, RBAC) cannot run without Redis due to the autouse dependency chain. (`tests/conftest.py:50-57`)
+- [x] **L-6** — `autouse` Redis flush skips entire test suite if Redis is unavailable: pure unit tests (WAF regex, JWT, RBAC) cannot run without Redis due to the autouse dependency chain. (`tests/conftest.py:50-57`)
 
-- [ ] **L-7** — `_tail_jsonl` truncation not surfaced to caller: no error or metadata returned when fewer than N lines are available. (`app/web/dashboard.py:66`)
+- [x] **L-7** — `_tail_jsonl` truncation not surfaced to caller: no error or metadata returned when fewer than N lines are available. (`app/web/dashboard.py:66`)
 
-- [ ] **L-8** — Potential counter state leak in parametrized bot detection tests: within-test accumulation of Redis counters could cause false `RAPID_FIRE` hits at scale. (`tests/test_bot_detection.py:76-80`)
+- [x] **L-8** — Potential counter state leak in parametrized bot detection tests: within-test accumulation of Redis counters could cause false `RAPID_FIRE` hits at scale. (`tests/test_bot_detection.py:76-80`)
 
 - [x] **L-9** — Typo in Helm `values.yaml` image repository: `ritapi-advance` should be `ritapi-advanced` — default Helm install pulls from a non-existent image. (`helm/ritapi-advanced/values.yaml:7`)
 
