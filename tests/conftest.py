@@ -48,15 +48,29 @@ def redis():
 
 
 @pytest.fixture(autouse=True)
-def flush_test_redis(redis):
-    """Flush test Redis DB before each test to prevent state leakage."""
+def flush_test_redis():
+    """Flush test Redis DB before and after each test to prevent state leakage.
+
+    Uses its own connection so it does not depend on the session-scoped redis
+    fixture (M-5: fixes scope mismatch that dirtied failover tests).
+    Skipped silently when Redis is unavailable so pure unit tests still run
+    without Redis (L-6: decouples WAF/JWT/RBAC tests from Redis).
+    """
+    import redis as redis_lib
+    redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/15")
     try:
-        redis.flushdb()
+        r = redis_lib.from_url(redis_url, socket_connect_timeout=1)
+        r.ping()
+    except Exception:
+        yield  # Redis unavailable — skip flush, let pure unit tests run
+        return
+    try:
+        r.flushdb()
     except Exception:
         pass
     yield
     try:
-        redis.flushdb()
+        r.flushdb()
     except Exception:
         pass
 
