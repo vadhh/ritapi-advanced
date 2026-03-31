@@ -78,16 +78,31 @@ rule XSS_Polyglot
 rule XSS_Dangerous_Tags
 {
     meta:
-        description = "XSS via dangerous HTML tags (iframe, object, embed, svg)"
+        description = "XSS via dangerous HTML tags combined with execution vectors"
         severity    = "medium"
         category    = "xss"
+        // L-4 fix: tags alone (<svg>, <details>, <math>) are valid in CMS/rich-text.
+        // Only flag when a dangerous tag appears WITH an event handler or JS source.
     strings:
-        $t1 = "<iframe"    nocase
-        $t2 = "<object"    nocase
-        $t3 = "<embed"     nocase
-        $t4 = "<svg"       nocase
-        $t5 = "<math"      nocase
-        $t6 = "<details"   nocase
+        // High-risk embedding tags (flag on their own)
+        $embed1 = "<iframe"    nocase
+        $embed2 = "<object"    nocase
+        $embed3 = "<embed"     nocase
+        // Lower-risk tags — only dangerous with execution vector
+        $tag4 = "<svg"       nocase
+        $tag5 = "<math"      nocase
+        $tag6 = "<details"   nocase
+        // Execution vectors
+        $exec1 = "onload"    nocase
+        $exec2 = "onerror"   nocase
+        $exec3 = "onmouseover" nocase
+        $exec4 = "javascript:" nocase
+        $exec5 = "data:text"  nocase
+        $exec6 = "src="       nocase
     condition:
-        2 of them or (1 of them and any of ($t1, $t2, $t3))
+        // High-risk embed tag alone is sufficient
+        any of ($embed1, $embed2, $embed3)
+        or
+        // Lower-risk tags only flagged when combined with an execution vector
+        (any of ($tag4, $tag5, $tag6) and any of ($exec1, $exec2, $exec3, $exec4, $exec5, $exec6))
 }

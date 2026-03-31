@@ -74,8 +74,10 @@ def test_connect_method_suspicious(redis):
 
 
 def test_standard_methods_not_suspicious(redis):
-    for method in ("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"):
-        hits = _detect(redis, _IP.format(6), method, "/api", _UA, 0, 200)
+    # Use a unique IP per method to prevent counter accumulation across iterations
+    # from triggering RAPID_FIRE or BURST_TRAFFIC (L-8).
+    for idx, method in enumerate(("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS")):
+        hits = _detect(redis, _IP.format(f"6_{idx}"), method, "/api", _UA, 0, 200)
         assert not any(h[0] == "SUSPICIOUS_METHOD" for h in hits), \
             f"{method} should not trigger SUSPICIOUS_METHOD"
 

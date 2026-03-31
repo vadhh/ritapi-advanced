@@ -12,6 +12,7 @@ Runs after auth (we need claims) and before the decision engine gate.
 Only enforces on methods that carry a body (POST, PUT, PATCH).
 """
 import importlib
+import json
 import logging
 
 from fastapi import Request
@@ -62,9 +63,13 @@ class SchemaEnforcementMiddleware(BaseHTTPMiddleware):
         if schema_cls is None:
             return await call_next(request)
 
-        # Read and validate body
+        # Read and validate body.
+        # Explicitly use request.body() to populate Starlette's body cache so
+        # downstream middlewares (InjectionDetection) can also call request.body()
+        # without relying on implicit caching from request.json() (M-6).
         try:
-            body = await request.json()
+            raw = await request.body()
+            body = json.loads(raw)
         except Exception:
             return JSONResponse(
                 {"error": "Bad Request", "detail": "Invalid JSON body"},
