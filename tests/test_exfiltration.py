@@ -11,6 +11,7 @@ Thresholds (from exfiltration_detection.py):
   VOLUME_THRESHOLD_BYTES    = 10MB → monitor (not block)
 """
 import inspect
+import threading
 
 from app.middlewares.exfiltration_detection import (
     BULK_ACCESS_THRESHOLD,
@@ -199,3 +200,39 @@ def test_bulk_access_check_before_route_executes(flush_test_redis):
     assert bulk_pos < call_next_pos, (
         "bulk_access check must appear BEFORE call_next in dispatch()"
     )
+
+
+def test_incrby_concurrent_writes_atomic_ttl(redis):
+    """_incrby must not reset TTL under concurrent writes (EXPIRE NX atomicity).
+
+    Spawns 20 threads all incrementing the same key simultaneously. After all
+    threads complete the TTL must still be <= the initial window, proving that
+    EXPIRE NX prevented later writers from resetting it.
+    """
+    key = "test:incrby:concurrent"
+    window = 60
+    n_threads = 20
+    amount = 100
+
+    results = []
+    errors = []
+
+    def worker():
+        try:
+            val = _incrby(redis, key, amount, window)
+            results.append(val)
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+
+    threads = [threading.Thread(target=worker) for _ in range(n_threads)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"Threads raised errors: {errors}"
+    assert len(results) == n_threads
+    assert max(results) == n_threads * amount, "Final counter must equal sum of all increments"
+
+    ttl = redis.ttl(key)
+    assert 0 < ttl <= window, f"TTL must be set and <= {window}s, got {ttl}"

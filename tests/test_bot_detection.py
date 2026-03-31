@@ -232,25 +232,25 @@ def test_accumulate_risk_accumulates(redis):
 # ---------------------------------------------------------------------------
 
 def test_suspicious_method_blocks_via_middleware(client, redis):
-    """TRACE → SUSPICIOUS_METHOD (score=70) → cumulative ≥ 70 → 403."""
-    resp = client.request(
-        "TRACE", "/healthz",
-        headers={"X-Forwarded-For": "10.99.bot.100", "User-Agent": _UA},
-    )
+    """TRACE → SUSPICIOUS_METHOD (score=70) → risk stored → next request pre-blocked → 403."""
+    headers = {"X-Forwarded-For": "10.99.bot.100", "User-Agent": _UA}
+    # First request accumulates risk to 70 (≥ threshold); response passes through
+    client.request("TRACE", "/healthz", headers=headers)
+    # Second request: pre-request check sees risk ≥ threshold → Decision Engine blocks
+    resp = client.request("TRACE", "/healthz", headers=headers)
     assert resp.status_code == 403
-    assert "Automated" in resp.json().get("detail", "")
 
 
 def test_large_payload_header_blocks_via_middleware(client, redis):
-    """Content-Length > 10000 → LARGE_PAYLOAD (score=70) → cumulative ≥ 70 → 403."""
-    resp = client.get(
-        "/healthz",
-        headers={
-            "X-Forwarded-For": "10.99.bot.101",
-            "User-Agent": _UA,
-            "Content-Length": "15000",
-        },
-    )
+    """Content-Length > 10000 → LARGE_PAYLOAD (score=70) → risk stored → next request blocked."""
+    headers = {
+        "X-Forwarded-For": "10.99.bot.101",
+        "User-Agent": _UA,
+        "Content-Length": "15000",
+    }
+    # First request accumulates risk; second is pre-blocked
+    client.get("/healthz", headers=headers)
+    resp = client.get("/healthz", headers=headers)
     assert resp.status_code == 403
 
 

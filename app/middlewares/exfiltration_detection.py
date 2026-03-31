@@ -21,7 +21,6 @@ Actions:
 import logging
 
 from fastapi import Request
-from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.utils.logging import log_request
@@ -218,11 +217,5 @@ class ExfiltrationDetectionMiddleware(BaseHTTPMiddleware):
         requests_total.labels(
             method=method, action=action, detection_type=f"exfil:{top_reason}"
         ).inc()
-
-        if action == "block":
-            return JSONResponse(
-                {"error": "Forbidden", "detail": "Suspicious data access pattern detected"},
-                status_code=403,
-            )
 
         return response

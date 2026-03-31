@@ -12,7 +12,6 @@ import logging
 import os
 
 from fastapi import Request
-from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.utils.logging import log_request
@@ -66,11 +65,12 @@ BLOCK_THRESHOLD = 70
 # ---------------------------------------------------------------------------
 
 def _incr(redis, key: str, ttl: int) -> int:
-    """Increment a counter, setting TTL on first write. Returns new count."""
-    val = redis.incr(key)
-    if val == 1:
-        redis.expire(key, ttl)
-    return val
+    """Increment a counter, setting TTL atomically on first write (EXPIRE NX)."""
+    pipe = redis.pipeline()
+    pipe.incr(key)
+    pipe.expire(key, ttl, nx=True)
+    results = pipe.execute()
+    return results[0]
 
 
 def _get_int(redis, key: str) -> int:
@@ -271,11 +271,5 @@ class BotDetectionMiddleware(BaseHTTPMiddleware):
         threat_score.observe(score)
         if cumulative >= BLOCK_THRESHOLD:
             bot_blocks.inc()
-
-        if cumulative >= BLOCK_THRESHOLD:
-            return JSONResponse(
-                {"error": "Forbidden", "detail": "Automated request detected"},
-                status_code=403,
-            )
 
         return response
