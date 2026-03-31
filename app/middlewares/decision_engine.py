@@ -30,6 +30,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.policies.service import get_policy
 from app.routing.service import resolve_route
 from app.utils.logging import log_request
+from app.utils.redis_client import RedisClientSingleton
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +110,12 @@ class DecisionEngineMiddleware(BaseHTTPMiddleware):
     ) -> None:
         """Mark this IP for throttling — rate_limit reads this on next request."""
         self._log_monitor(request, ip, reason, det_type, score)
-        # Full Redis implementation added in Task C3
+        redis = RedisClientSingleton.get_client()
+        if redis:
+            try:
+                redis.set(f"ritapi:throttle:{ip}", "1", ex=60)
+            except Exception as e:
+                logger.error("Throttle Redis error: %s", e)
 
     def _log_monitor(
         self, request: Request, ip: str, reason: str, det_type: str, score: float

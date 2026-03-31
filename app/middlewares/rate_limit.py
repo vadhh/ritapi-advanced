@@ -63,6 +63,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         api_key = request.headers.get("x-api-key", "")
 
         redis = RedisClientSingleton.get_client()
+        if redis and client_ip:
+            try:
+                if redis.exists(f"ritapi:throttle:{client_ip}"):
+                    rate_limit = max(1, rate_limit // 2)
+            except Exception as e:
+                logger.error("Throttle check Redis error: %s", e)
+
         if redis and (client_ip or api_key):
             path_key = path.split("?")[0].replace("/", "_")
 
