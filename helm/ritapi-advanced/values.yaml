@@ -37,6 +37,7 @@ secrets:
   secretKey: ""
   adminSecret: ""
   redisPassword: ""
+  dashboardToken: ""  # Set to a strong random value to protect /dashboard
 
 # ---------------------------------------------------------------------------
 # Redis — toggle between bundled (subchart) and external

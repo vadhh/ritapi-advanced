@@ -36,7 +36,7 @@ Audit performed: 2026-03-30
 
 - [x] **M-1** — Env var name mismatch: docs and `.env.staging` use `REDIS_SENTINEL_MASTER` but code reads `REDIS_SENTINEL_SERVICE` — Sentinel deployments silently fall back to `mymaster`. (`app/utils/redis_client.py:64`, `.env.staging:37`)
 
-- [ ] **M-2** — `DASHBOARD_TOKEN` absent from all deployment templates: missing from `.env.example`, `.env.staging`, and Helm ConfigMap — dashboard deploys with no auth by default. (`.env.example`, `helm/ritapi-advanced/templates/configmap.yaml`)
+- [x] **M-2** — `DASHBOARD_TOKEN` absent from all deployment templates: missing from `.env.example`, `.env.staging`, and Helm ConfigMap — dashboard deploys with no auth by default. (`.env.example`, `helm/ritapi-advanced/templates/configmap.yaml`)
 
 - [ ] **M-3** — `ADMIN_SECRET` missing from `.env.example`: operators following the example file will deploy with admin bootstrap auth silently disabled. (`.env.example`)
 
@@ -46,7 +46,7 @@ Audit performed: 2026-03-30
 
 - [ ] **M-6** — Double body read relies on Starlette internal caching: `SchemaEnforcementMiddleware` and `InjectionDetectionMiddleware` both read the request body — fragile coupling to Starlette's `_body` caching behavior. (`app/middlewares/schema_enforcement.py:66`, `app/middlewares/injection_detection.py:234`)
 
-- [ ] **M-7** — Injection blocks bypass `DecisionEngineMiddleware` entirely: injection middleware returns directly without calling `call_next`, so `request.state.policy` and `request.state.route` are never set for blocked requests. (`app/middlewares/injection_detection.py:221-280`)
+- [x] **M-7** — Injection blocks bypass `DecisionEngineMiddleware` entirely: injection middleware returns directly without calling `call_next`, so `request.state.policy` and `request.state.route` are never set for blocked requests. (`app/middlewares/injection_detection.py:221-280`)
 
 - [ ] **M-8** — Per-process singletons unreliable with multiple workers: YARA scanner, Redis client, and policy/route caches are per-process — hot-reload via SIGHUP or `reload_policies()` only affects one worker under `uvicorn --workers 2`. (`app/utils/yara_scanner.py:183`, `Dockerfile:72`)
 
@@ -66,7 +66,7 @@ Audit performed: 2026-03-30
 
 - [ ] **L-4** — `XSS_Dangerous_Tags` YARA rule too broad: `2 of them` condition matches normal HTML containing e.g. `<details>` and `<svg>` — high false-positive risk for CMS or rich-text payloads. (`rules/xss.yar:92`)
 
-- [ ] **L-5** — `throttle` action in policy is a documented no-op: `on_rate_limit: throttle` in `auth.yml` has the same effect as `allow`. (`configs/policies/auth.yml:18`, `app/middlewares/decision_engine.py:69-72`)
+- [x] **L-5** — `throttle` action in policy is a documented no-op: `on_rate_limit: throttle` in `auth.yml` has the same effect as `allow`. (`configs/policies/auth.yml:18`, `app/middlewares/decision_engine.py:69-72`)
 
 - [ ] **L-6** — `autouse` Redis flush skips entire test suite if Redis is unavailable: pure unit tests (WAF regex, JWT, RBAC) cannot run without Redis due to the autouse dependency chain. (`tests/conftest.py:50-57`)
 
@@ -76,4 +76,4 @@ Audit performed: 2026-03-30
 
 - [x] **L-9** — Typo in Helm `values.yaml` image repository: `ritapi-advance` should be `ritapi-advanced` — default Helm install pulls from a non-existent image. (`helm/ritapi-advanced/values.yaml:7`)
 
-- [ ] **L-10** — Missing test coverage: no tests for `DecisionEngineMiddleware` policy dispatch, `SchemaEnforcementMiddleware`, API key rotation atomicity, or dashboard with `DASHBOARD_TOKEN` set. (`tests/`)
+- [x] **L-10** — Missing test coverage: no tests for `DecisionEngineMiddleware` policy dispatch, `SchemaEnforcementMiddleware`, API key rotation atomicity, or dashboard with `DASHBOARD_TOKEN` set. (`tests/`)
