@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from app.auth.api_key_handler import issue_api_key, revoke_api_key, rotate_api_key
 from app.auth.jwt_handler import create_access_token
 from app.rbac.rbac_service import UserRole, require_role
+from app.utils.logging import log_admin_event
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,13 @@ class TokenRequest(BaseModel):
         ..., min_length=1, max_length=128, description="Identity (username, service name)"
     )
     role: str = Field(..., description="VIEWER | AUDITOR | OPERATOR | ADMIN | SUPER_ADMIN")
+    tenant_id: str = Field(
+        default="default",
+        min_length=1,
+        max_length=64,
+        pattern=r'^[a-zA-Z0-9_-]+$',
+        description="Tenant this token is bound to. Defaults to 'default'.",
+    )
 
 
 class TokenResponse(BaseModel):
@@ -105,6 +113,13 @@ class ApiKeyRequest(BaseModel):
     role: str = Field(..., description="VIEWER | AUDITOR | OPERATOR | ADMIN | SUPER_ADMIN")
     ttl_days: int | None = Field(
         None, ge=1, le=3650, description="Key TTL in days. Omit for no expiry."
+    )
+    tenant_id: str = Field(
+        default="default",
+        min_length=1,
+        max_length=64,
+        pattern=r'^[a-zA-Z0-9_-]+$',
+        description="Tenant this key is bound to. Defaults to 'default'.",
     )
 
 
@@ -131,6 +146,7 @@ class ApiKeyRevokeRequest(BaseModel):
 
 @router.post("/token", response_model=TokenResponse, summary="Issue a JWT")
 async def issue_token(
+    request: Request,
     body: TokenRequest,
     caller: dict = Depends(_require_super_admin_access),
 ):
@@ -150,10 +166,14 @@ async def issue_token(
         ) from err
 
     from app.auth.jwt_handler import EXPIRE_MINUTES
-    token = create_access_token(subject=body.subject, role=role.name)
-    logger.info(  # nosemgrep: python-logger-credential-disclosure
-        "Token issued: subject=%s role=%s by=%s",
-        body.subject, role.name, caller.get("subject"),
+    token = create_access_token(subject=body.subject, role=role.name, tenant_id=body.tenant_id)
+    log_admin_event(
+        action="token_issued",
+        subject=body.subject,
+        role=role.name,
+        issuer=caller.get("subject", "unknown"),
+        tenant_id=body.tenant_id,
+        request_id=getattr(request.state, "request_id", None),
     )
     return TokenResponse(
         access_token=token,
@@ -165,6 +185,7 @@ async def issue_token(
 
 @router.post("/apikey", response_model=ApiKeyResponse, summary="Issue an API key")
 async def issue_key(
+    request: Request,
     body: ApiKeyRequest,
     caller: dict = Depends(_require_admin_access),
 ):
@@ -182,15 +203,20 @@ async def issue_key(
 
     ttl_seconds = body.ttl_days * 86400 if body.ttl_days else None
     try:
-        raw_key = issue_api_key(body.subject, role.name, ttl_seconds=ttl_seconds)
+        raw_key = issue_api_key(body.subject, role.name, tenant_id=body.tenant_id, ttl_seconds=ttl_seconds)
     except RuntimeError as e:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)
         ) from e
 
-    logger.info(  # nosemgrep: python-logger-credential-disclosure
-        "API key issued: subject=%s role=%s ttl_days=%s by=%s",
-        body.subject, role.name, body.ttl_days, caller.get("subject"),
+    log_admin_event(
+        action="apikey_issued",
+        subject=body.subject,
+        role=role.name,
+        issuer=caller.get("subject", "unknown"),
+        tenant_id=body.tenant_id,
+        request_id=getattr(request.state, "request_id", None),
+        metadata={"ttl_days": body.ttl_days},
     )
     return ApiKeyResponse(
         api_key=raw_key,
@@ -202,6 +228,7 @@ async def issue_key(
 
 @router.post("/apikey/rotate", response_model=ApiKeyResponse, summary="Rotate an API key")
 async def rotate_key(
+    request: Request,
     body: ApiKeyRotateRequest,
     caller: dict = Depends(_require_admin_access),
 ):
@@ -220,8 +247,13 @@ async def rotate_key(
     # Fetch metadata from the new key to return subject/role
     from app.auth.api_key_handler import validate_api_key
     meta = validate_api_key(new_key) or {}
-    # nosemgrep: python-logger-credential-disclosure — logs caller identity only
-    logger.info("API key rotated by=%s", caller.get("subject"))
+    log_admin_event(
+        action="apikey_rotated",
+        subject=meta.get("subject", "unknown"),
+        issuer=caller.get("subject", "unknown"),
+        tenant_id=meta.get("tenant_id", "default"),
+        request_id=getattr(request.state, "request_id", None),
+    )
     return ApiKeyResponse(
         api_key=new_key,
         subject=meta.get("subject", ""),
@@ -232,6 +264,7 @@ async def rotate_key(
 
 @router.delete("/apikey", summary="Revoke an API key")
 async def revoke_key(
+    request: Request,
     body: ApiKeyRevokeRequest,
     caller: dict = Depends(_require_admin_access),
 ):
@@ -240,8 +273,12 @@ async def revoke_key(
     Requires ADMIN+ or a valid ADMIN_SECRET header.
     """
     deleted = revoke_api_key(body.api_key)
-    # nosemgrep: python-logger-credential-disclosure — logs caller identity only
-    logger.info("API key revoke by=%s result=%s", caller.get("subject"), deleted)
+    log_admin_event(
+        action="apikey_revoked",
+        subject=caller.get("subject", "unknown"),
+        issuer=caller.get("subject", "unknown"),
+        request_id=getattr(request.state, "request_id", None),
+    )
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
