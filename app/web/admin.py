@@ -90,6 +90,13 @@ class TokenRequest(BaseModel):
         ..., min_length=1, max_length=128, description="Identity (username, service name)"
     )
     role: str = Field(..., description="VIEWER | AUDITOR | OPERATOR | ADMIN | SUPER_ADMIN")
+    tenant_id: str = Field(
+        default="default",
+        min_length=1,
+        max_length=64,
+        pattern=r'^[a-zA-Z0-9_-]+$',
+        description="Tenant this token is bound to. Defaults to 'default'.",
+    )
 
 
 class TokenResponse(BaseModel):
@@ -105,6 +112,13 @@ class ApiKeyRequest(BaseModel):
     role: str = Field(..., description="VIEWER | AUDITOR | OPERATOR | ADMIN | SUPER_ADMIN")
     ttl_days: int | None = Field(
         None, ge=1, le=3650, description="Key TTL in days. Omit for no expiry."
+    )
+    tenant_id: str = Field(
+        default="default",
+        min_length=1,
+        max_length=64,
+        pattern=r'^[a-zA-Z0-9_-]+$',
+        description="Tenant this key is bound to. Defaults to 'default'.",
     )
 
 
@@ -150,7 +164,7 @@ async def issue_token(
         ) from err
 
     from app.auth.jwt_handler import EXPIRE_MINUTES
-    token = create_access_token(subject=body.subject, role=role.name)
+    token = create_access_token(subject=body.subject, role=role.name, tenant_id=body.tenant_id)
     logger.info(  # nosemgrep: python-logger-credential-disclosure
         "Token issued: subject=%s role=%s by=%s",
         body.subject, role.name, caller.get("subject"),
@@ -182,7 +196,7 @@ async def issue_key(
 
     ttl_seconds = body.ttl_days * 86400 if body.ttl_days else None
     try:
-        raw_key = issue_api_key(body.subject, role.name, ttl_seconds=ttl_seconds)
+        raw_key = issue_api_key(body.subject, role.name, tenant_id=body.tenant_id, ttl_seconds=ttl_seconds)
     except RuntimeError as e:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)

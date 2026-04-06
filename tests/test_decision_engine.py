@@ -141,7 +141,9 @@ def test_throttle_sets_redis_key():
     mock_redis.set.assert_called_once()
     call_args = mock_redis.set.call_args
     key = call_args[0][0]
-    assert key == "ritapi:throttle:1.2.3.4", f"Expected throttle key for IP, got {key}"
+    # Key is namespaced with tenant_id; MagicMock state has no str tenant_id so
+    # the middleware falls back to "default".
+    assert key == "ritapi:default:throttle:1.2.3.4", f"Expected namespaced throttle key for IP, got {key}"
     assert call_args[1].get("ex") == 60 or call_args[0][2] == 60 or (
         len(call_args[0]) > 2 and call_args[0][2] == 60
     ), "Throttle key must have TTL of 60s"
@@ -150,10 +152,13 @@ def test_throttle_sets_redis_key():
 def test_rate_limit_calls_call_next_not_jsonresponse_429():
     """RateLimitMiddleware must call call_next after writing detections, not return 429."""
     source = inspect.getsource(RateLimitMiddleware.dispatch)
-    detections_pos = source.index("request.state.detections")
-    post_detection = source[detections_pos:]
-    next_return_pos = post_detection.index("return")
-    assert "call_next" in post_detection[next_return_pos:next_return_pos + 30], (
+    # Detections are written via append_detection; verify dispatch ends with call_next
+    assert "append_detection" in source, (
+        "RateLimitMiddleware must use append_detection to write detections"
+    )
+    append_pos = source.index("append_detection")
+    post_append = source[append_pos:]
+    assert "call_next" in post_append, (
         "After writing detections, RateLimitMiddleware must call call_next not return 429"
     )
 

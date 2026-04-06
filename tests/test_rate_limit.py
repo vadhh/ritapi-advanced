@@ -74,8 +74,8 @@ def test_api_key_not_in_redis_key_name(flush_test_redis):
 
 
 def test_rate_limit_writes_to_state_detections():
-    """RateLimitMiddleware must write to request.state.detections."""
+    """RateLimitMiddleware must write to request.state.detections via append_detection."""
     source = inspect.getsource(RateLimitMiddleware.dispatch)
-    assert "request.state.detections" in source, (
-        "RateLimitMiddleware must write to request.state.detections"
+    assert "append_detection" in source or "ensure_detections_container" in source, (
+        "RateLimitMiddleware must use append_detection / ensure_detections_container"
     )

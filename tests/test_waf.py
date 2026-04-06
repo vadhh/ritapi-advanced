@@ -132,6 +132,12 @@ def test_clean_json_not_blocked(client, auth_headers):
     assert resp.status_code != 403
 
 
+def test_clean_query_id_not_blocked(client, auth_headers):
+    """Benign query key 'id' must not be treated as command injection."""
+    resp = client.get("/api/data?id=hello", headers=auth_headers)
+    assert resp.status_code != 403
+
+
 def test_nested_xss_in_json_blocked(client, auth_headers):
     """XSS in deeply nested JSON field should be caught."""
     headers = {**auth_headers, "Content-Type": "application/json"}
@@ -141,8 +147,8 @@ def test_nested_xss_in_json_blocked(client, auth_headers):
 
 
 def test_injection_writes_to_state_detections():
-    """InjectionDetectionMiddleware must write to request.state.detections."""
+    """InjectionDetectionMiddleware must write to request.state.detections via append_detection."""
     source = inspect.getsource(InjectionDetectionMiddleware.dispatch)
-    assert "request.state.detections" in source, (
-        "InjectionDetectionMiddleware must write to request.state.detections"
+    assert "append_detection" in source or "ensure_detections_container" in source, (
+        "InjectionDetectionMiddleware must use append_detection / ensure_detections_container"
     )

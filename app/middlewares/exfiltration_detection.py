@@ -23,9 +23,10 @@ import logging
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.utils.logging import log_request
+from app.middlewares.detection_schema import append_detection
 from app.utils.metrics import exfiltration_alerts, requests_total, response_size_bytes
 from app.utils.redis_client import RedisClientSingleton
+from app.utils.tenant_key import tenant_scoped_key
 
 logger = logging.getLogger(__name__)
 
@@ -91,12 +92,16 @@ class ExfiltrationDetectionMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         method = request.method
 
+        raw_tid = getattr(request.state, "tenant_id", None)
+        tenant_id = raw_tid if isinstance(raw_tid, str) and raw_tid else "default"
+        pfx = tenant_scoped_key(tenant_id, "exfil")
+
         # --- Pre-request block for counter-based detections ---
         redis_pre = RedisClientSingleton.get_client()
         if redis_pre is not None:
             try:
-                bulk_count = int(redis_pre.get(f"exfil:bulk:{ip}:{path}") or 0)
-                ep_count = int(redis_pre.scard(f"exfil:crawl:{ip}") or 0)
+                bulk_count = int(redis_pre.get(f"{pfx}:bulk:{ip}:{path}") or 0)
+                ep_count = int(redis_pre.scard(f"{pfx}:crawl:{ip}") or 0)
                 pre_reason = None
                 if bulk_count > BULK_ACCESS_THRESHOLD:
                     pre_reason = "bulk_access"
@@ -108,14 +113,15 @@ class ExfiltrationDetectionMiddleware(BaseHTTPMiddleware):
                         "Exfiltration pre-block [%s] from %s on %s",
                         pre_reason, ip, path,
                     )
-                    if not hasattr(request.state, "detections"):
-                        request.state.detections = []
-                    request.state.detections.append({
-                        "type": "exfiltration_block",
-                        "score": 0.9,
-                        "reason": f"{pre_reason} (pre-request counter exceeded)",
-                        "status_code": 403,
-                    })
+                    append_detection(
+                        request,
+                        detection_type="exfiltration_block",
+                        score=0.9,
+                        reason=f"{pre_reason} (pre-request counter exceeded)",
+                        status_code=403,
+                        source="exfiltration_detection",
+                        metadata={"reason": pre_reason, "phase": "pre_request"},
+                    )
                     return await call_next(request)
             except Exception as e:
                 logger.debug("Exfil pre-request Redis check failed (fail-open): %s", e)
@@ -169,17 +175,17 @@ class ExfiltrationDetectionMiddleware(BaseHTTPMiddleware):
                 alerts.append(("large_response", "monitor"))
 
             # 2. High cumulative volume from this IP
-            total_bytes = _incrby(redis, f"exfil:bytes:{ip}", body_size, VOLUME_WINDOW)
+            total_bytes = _incrby(redis, f"{pfx}:bytes:{ip}", body_size, VOLUME_WINDOW)
             if total_bytes > VOLUME_THRESHOLD_BYTES:
                 alerts.append(("high_volume", "monitor"))
 
             # 3. Bulk access to same endpoint
-            bulk_count = _incr(redis, f"exfil:bulk:{ip}:{path}", BULK_ACCESS_WINDOW)
+            bulk_count = _incr(redis, f"{pfx}:bulk:{ip}:{path}", BULK_ACCESS_WINDOW)
             if bulk_count > BULK_ACCESS_THRESHOLD:
                 alerts.append(("bulk_access", "block"))
 
             # 4. Sequential endpoint crawling
-            ep_count = _sadd_count(redis, f"exfil:crawl:{ip}", path, CRAWL_WINDOW)
+            ep_count = _sadd_count(redis, f"{pfx}:crawl:{ip}", path, CRAWL_WINDOW)
             if ep_count > CRAWL_ENDPOINT_THRESHOLD:
                 alerts.append(("sequential_crawl", "block"))
 
@@ -197,19 +203,24 @@ class ExfiltrationDetectionMiddleware(BaseHTTPMiddleware):
         top_reason = next(r for r, a in alerts if a == action)
         score = 0.9 if action == "block" else 0.5
 
+        append_detection(
+            request,
+            detection_type="exfiltration_block" if action == "block" else "exfiltration",
+            score=score,
+            reason=f"{reasons} (response_size={body_size})",
+            status_code=403 if action == "block" else 200,
+            source="exfiltration_detection",
+            metadata={
+                "alerts": [r for r, _ in alerts],
+                "top_reason": top_reason,
+                "response_size": body_size,
+                "action": action,
+            },
+        )
+
         logger.warning(
             "Exfiltration alert [%s] from %s on %s — body_size=%d bytes",
             reasons, ip, path, body_size,
-        )
-
-        log_request(
-            client_ip=ip,
-            path=path,
-            method=method,
-            action=action,
-            detection_type=f"exfil:{top_reason}",
-            score=score,
-            reasons=f"{reasons} (response_size={body_size})",
         )
 
         for reason, _ in alerts:

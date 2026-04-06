@@ -42,13 +42,21 @@ def _redis_key(raw_key: str) -> str:
 # Public API
 # ---------------------------------------------------------------------------
 
-def issue_api_key(subject: str, role: str, ttl_seconds: int | None = None) -> str:
+def issue_api_key(
+    subject: str,
+    role: str,
+    tenant_id: str = "default",
+    ttl_seconds: int | None = None,
+) -> str:
     """
     Generate a new API key, store its hash in Redis, and return the raw key.
 
     Args:
         subject:     Identifier for the key owner (username, service name, etc.)
         role:        One of SUPER_ADMIN | ADMIN | OPERATOR | AUDITOR | VIEWER
+        tenant_id:   Tenant this key is bound to. AuthMiddleware rejects
+                     requests where X-Target-ID does not match this value.
+                     Defaults to "default" for single-tenant deployments.
         ttl_seconds: Optional TTL in seconds. None means the key never expires.
 
     Returns:
@@ -65,6 +73,7 @@ def issue_api_key(subject: str, role: str, ttl_seconds: int | None = None) -> st
     metadata = json.dumps({
         "role": role,
         "subject": subject,
+        "tenant_id": tenant_id,
         "created_at": datetime.now(UTC).isoformat(),
         "expires_in": ttl_seconds,
     })
@@ -87,7 +96,12 @@ def rotate_api_key(old_raw_key: str, ttl_seconds: int | None = None) -> str | No
     if meta is None:
         return None
     revoke_api_key(old_raw_key)
-    return issue_api_key(meta["subject"], meta["role"], ttl_seconds=ttl_seconds)
+    return issue_api_key(
+        meta["subject"],
+        meta["role"],
+        tenant_id=meta.get("tenant_id", "default"),
+        ttl_seconds=ttl_seconds,
+    )
 
 
 def validate_api_key(raw_key: str) -> dict | None:

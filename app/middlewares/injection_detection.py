@@ -13,7 +13,8 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.utils.logging import log_request
+from app.middlewares.detection_schema import append_detection, ensure_detections_container
+from app.security.security_event_logger import log_security_event
 from app.utils.metrics import injection_blocks, requests_total, threat_score
 
 logger = logging.getLogger(__name__)
@@ -84,7 +85,8 @@ CMDI_PATTERNS = [
     re.compile(r"(?i)(cat\s+/etc/passwd)"),
     re.compile(r"(?i)(cat\s+/etc/shadow)"),
     re.compile(r"(?i)(cat\s+/etc/hosts)"),
-    re.compile(r"(?i)\b(whoami|id|uname|pwd|hostname)\b"),
+    # Require command-context tokens to avoid false positives like '?id=123'.
+    re.compile(r"(?i)(?:[;|&`]|\$\(|\$\{)\s*(whoami|id|uname|pwd|hostname)\b"),
 ]
 
 PATH_TRAVERSAL_PATTERNS = [
@@ -210,6 +212,8 @@ MAX_BODY = 2 * 1024 * 1024  # 2 MB — per PRD
 
 class InjectionDetectionMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        ensure_detections_container(request)
+
         client_ip = (
             (request.headers.get("x-forwarded-for", "").split(",")[0].strip())
             or (request.client.host if request.client else "")
@@ -220,14 +224,15 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
         hit, category, snippet = _scan_value("user_agent", ua)
         if hit:
             self._log_and_block(client_ip, request, category, snippet)
-            if not hasattr(request.state, "detections"):
-                request.state.detections = []
-            request.state.detections.append({
-                "type": "injection",
-                "score": 0.95,
-                "reason": f"{category}: {snippet[:120]}",
-                "status_code": 403,
-            })
+            append_detection(
+                request,
+                detection_type="injection",
+                score=0.95,
+                reason=f"{category}: {snippet[:120]}",
+                status_code=403,
+                source="injection_detection",
+                metadata={"category": category, "signal": "user_agent"},
+            )
             return await call_next(request)
 
         # --- 2. URL / query string check ---
@@ -235,14 +240,15 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
         hit, category, snippet = _scan_value("url", raw_url)
         if hit:
             self._log_and_block(client_ip, request, category, snippet)
-            if not hasattr(request.state, "detections"):
-                request.state.detections = []
-            request.state.detections.append({
-                "type": "injection",
-                "score": 0.95,
-                "reason": f"{category}: {snippet[:120]}",
-                "status_code": 403,
-            })
+            append_detection(
+                request,
+                detection_type="injection",
+                score=0.95,
+                reason=f"{category}: {snippet[:120]}",
+                status_code=403,
+                source="injection_detection",
+                metadata={"category": category, "signal": "url"},
+            )
             return await call_next(request)
 
         # --- 3. Request body check (POST / PUT / PATCH only) ---
@@ -250,14 +256,14 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
             body = await request.body()
 
             if len(body) > MAX_BODY:
-                log_request(
-                    client_ip=client_ip,
-                    path=request.url.path,
-                    method=request.method,
+                # Bypass — does not reach DecisionEngine; emit canonical event directly.
+                log_security_event(
+                    request,
                     action="block",
-                    detection_type="payload_too_large",
-                    score=0.5,
-                    reasons=f"Body size {len(body)} exceeds {MAX_BODY} bytes",
+                    status_code=413,
+                    reason=f"Body size {len(body)} exceeds {MAX_BODY} bytes",
+                    trigger_type="payload_too_large",
+                    trigger_source="injection_detection",
                 )
                 return JSONResponse({"error": "Request body too large."}, status_code=413)
 
@@ -267,14 +273,15 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
             hit, category, snippet = _scan_value("body", body_text)
             if hit:
                 self._log_and_block(client_ip, request, category, snippet)
-                if not hasattr(request.state, "detections"):
-                    request.state.detections = []
-                request.state.detections.append({
-                    "type": "injection",
-                    "score": 0.95,
-                    "reason": f"{category}: {snippet[:120]}",
-                    "status_code": 403,
-                })
+                append_detection(
+                    request,
+                    detection_type="injection",
+                    score=0.95,
+                    reason=f"{category}: {snippet[:120]}",
+                    status_code=403,
+                    source="injection_detection",
+                    metadata={"category": category, "signal": "body_text"},
+                )
                 return await call_next(request)
 
             # JSON recursive scan
@@ -285,14 +292,15 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
                     hit, category, snippet = _scan_recursive(payload)
                     if hit:
                         self._log_and_block(client_ip, request, category, snippet)
-                        if not hasattr(request.state, "detections"):
-                            request.state.detections = []
-                        request.state.detections.append({
-                            "type": "injection",
-                            "score": 0.95,
-                            "reason": f"{category}: {snippet[:120]}",
-                            "status_code": 403,
-                        })
+                        append_detection(
+                            request,
+                            detection_type="injection",
+                            score=0.95,
+                            reason=f"{category}: {snippet[:120]}",
+                            status_code=403,
+                            source="injection_detection",
+                            metadata={"category": category, "signal": "json_recursive"},
+                        )
                         return await call_next(request)
             except (json.JSONDecodeError, ValueError):
                 pass  # not JSON — plain text scan above is sufficient
@@ -306,14 +314,15 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
                     if matches:
                         top = matches[0]
                         self._log_and_block(client_ip, request, f"yara:{top.rule}", top.rule)
-                        if not hasattr(request.state, "detections"):
-                            request.state.detections = []
-                        request.state.detections.append({
-                            "type": "injection",
-                            "score": 0.95,
-                            "reason": f"yara:{top.rule}: {top.rule}",
-                            "status_code": 403,
-                        })
+                        append_detection(
+                            request,
+                            detection_type="injection",
+                            score=0.95,
+                            reason=f"yara:{top.rule}: {top.rule}",
+                            status_code=403,
+                            source="injection_detection",
+                            metadata={"category": "yara", "rule": top.rule, "signal": "yara"},
+                        )
                         return await call_next(request)
             except Exception as e:
                 logger.debug("YARA scan skipped: %s", e)
@@ -325,15 +334,6 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
         logger.warning(
             "Injection blocked [%s] from %s on %s — %s",
             category, client_ip, request.url.path, snippet[:80],
-        )
-        log_request(
-            client_ip=client_ip,
-            path=request.url.path,
-            method=request.method,
-            action="block",
-            detection_type=category,
-            score=1.0,
-            reasons=f"Pattern matched: {snippet[:120]}",
         )
         injection_blocks.labels(category=category).inc()
         requests_total.labels(method=request.method, action="block", detection_type=category).inc()
