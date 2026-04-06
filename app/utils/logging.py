@@ -1,61 +1,34 @@
 import json
 import logging
-import os
 from datetime import UTC, datetime
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-_LOG_PATH: str = os.getenv("LOG_PATH", "/var/log/ritapi_advanced.jsonl")
 
-
-def _ensure_log_file(path: str) -> bool:
-    """Create parent directories and the log file if they do not exist.
-    Returns False if the path is not writable."""
-    try:
-        p = Path(path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.touch(exist_ok=True)
-        return True
-    except OSError as e:
-        logger.warning("Cannot create log file at %s: %s — falling back to stderr", path, e)
-        return False
-
-
-def log_request(
+def log_admin_event(
     *,
-    client_ip: str,
-    path: str,
-    method: str,
-    action: str,           # "allow" | "block" | "monitor"
-    detection_type: str,   # e.g. "rate_limit", "xss", "sqli", "bot", "none"
-    score: float = 0.0,
-    reasons: str = "",
+    action: str,
+    subject: str,
+    issuer: str,
+    role: str | None = None,
+    tenant_id: str = "default",
+    request_id: str | None = None,
+    metadata: dict | None = None,
 ) -> None:
-    """
-    Append one JSONL entry to LOG_PATH.
+    """Emit a structured JSON admin audit event to stdout.
 
-    All writes are best-effort — a logging failure will never raise to the caller.
+    action: token_issued | apikey_issued | apikey_rotated | apikey_revoked
     """
-    entry = {
+    entry: dict = {
+        "event_type": "admin_action",
         "timestamp": datetime.now(UTC).isoformat(),
-        "client_ip": client_ip,
-        "path": path,
-        "method": method,
         "action": action,
-        "detection_type": detection_type,
-        "score": round(score, 4),
-        "reasons": reasons,
+        "subject": subject,
+        "role": role,
+        "issuer": issuer,
+        "tenant_id": tenant_id,
+        "request_id": request_id,
     }
-
-    try:
-        line = json.dumps(entry, ensure_ascii=False)
-        path_ok = _ensure_log_file(_LOG_PATH)
-        if path_ok:
-            with open(_LOG_PATH, "a", encoding="utf-8") as f:
-                f.write(line + "\n")
-        else:
-            # Fallback: emit to stderr via logging
-            logger.warning("RITAPI_LOG %s", line)
-    except Exception as e:
-        logger.error("log_request failed: %s", e)
+    if metadata:
+        entry.update(metadata)
+    print(json.dumps(entry), flush=True)

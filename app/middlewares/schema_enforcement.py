@@ -20,6 +20,8 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.middlewares.detection_schema import append_detection
+
 logger = logging.getLogger(__name__)
 
 # Methods that may carry a request body
@@ -75,20 +77,30 @@ class SchemaEnforcementMiddleware(BaseHTTPMiddleware):
             raw = await request.body()
             body = json.loads(raw)
         except Exception:
-            return JSONResponse(
-                {"error": "Bad Request", "detail": "Invalid JSON body"},
+            append_detection(
+                request,
+                detection_type="schema_violation",
+                score=0.8,
+                reason="Invalid JSON body",
                 status_code=400,
+                source="schema_enforcement",
+                metadata={"schema": schema_name, "error": "json_parse_error"},
             )
+            return await call_next(request)
 
         try:
             schema_cls.model_validate(body)
         except ValidationError as e:
-            return JSONResponse(
-                {
-                    "error": "Unprocessable Entity",
-                    "detail": e.errors(),
-                },
+            errors = e.errors()
+            append_detection(
+                request,
+                detection_type="schema_violation",
+                score=0.8,
+                reason=f"Schema validation failed: {len(errors)} error(s)",
                 status_code=422,
+                source="schema_enforcement",
+                metadata={"schema": schema_name, "errors": errors},
             )
+            return await call_next(request)
 
         return await call_next(request)

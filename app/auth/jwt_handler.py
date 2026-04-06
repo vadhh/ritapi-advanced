@@ -28,20 +28,28 @@ if not SECRET_KEY:
     raise RuntimeError("SECRET_KEY environment variable is not set.")
 
 
-def create_access_token(subject: str, role: str, extra: dict | None = None) -> str:
+def create_access_token(
+    subject: str,
+    role: str,
+    tenant_id: str = "default",
+    extra: dict | None = None,
+) -> str:
     """
     Issue a signed JWT.
 
     Args:
-        subject: Identity string (username, client ID, etc.)
-        role:    One of SUPER_ADMIN | ADMIN | OPERATOR | AUDITOR | VIEWER
-        extra:   Optional additional claims merged into the payload.
+        subject:   Identity string (username, client ID, etc.)
+        role:      One of SUPER_ADMIN | ADMIN | OPERATOR | AUDITOR | VIEWER
+        tenant_id: Tenant this token is bound to. AuthMiddleware rejects
+                   requests where X-Target-ID does not match this value.
+                   Defaults to "default" for single-tenant deployments.
+        extra:     Optional additional claims merged into the payload.
 
     Returns:
         Encoded JWT string.
     """
     expire = datetime.now(UTC) + timedelta(minutes=EXPIRE_MINUTES)
-    payload = {"sub": subject, "role": role, "exp": expire}
+    payload = {"sub": subject, "role": role, "tid": tenant_id, "exp": expire}
     if extra:
         payload.update(extra)
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
