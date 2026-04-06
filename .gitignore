@@ -39,3 +39,4 @@ productize/
 projects/
 scripts/minifw_fixed/
 install.sh
+.worktrees/
