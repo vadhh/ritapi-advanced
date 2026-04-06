@@ -20,7 +20,6 @@ Run:
 """
 
 import asyncio
-import os
 import statistics
 import time
 from collections import Counter
@@ -40,13 +39,11 @@ import httpx
 #
 # Bulk-access exfil threshold: 50 same-path hits / IP / 60 s → 403
 # Bot block risk threshold: 70 pts (cumulative per IP)
-
 # ── App imports — conftest already set env vars before this module loads ───
-import app.middlewares.rate_limit as _rl_module     # noqa: E402
-from app.main import app                             # noqa: E402
-from app.auth.jwt_handler import create_access_token # noqa: E402
+import app.middlewares.rate_limit as _rl_module  # noqa: E402
+from app.auth.jwt_handler import create_access_token  # noqa: E402
+from app.main import app  # noqa: E402
 from app.utils.redis_client import RedisClientSingleton  # noqa: E402
-
 
 # ── Route-handler execution tracker ───────────────────────────────────────
 

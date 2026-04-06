@@ -12,13 +12,11 @@ import asyncio
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi import Request
 from starlette.responses import JSONResponse as StarletteJSONResponse
 
 from app.middlewares.decision_engine import DecisionEngineMiddleware
 from app.policies.service import DecisionActions, Policy
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -125,7 +123,7 @@ def test_block_event_correlation(capsys):
 
     # Only one line should be emitted (no duplicates)
     raw = capsys.readouterr().out.strip()
-    lines = [l for l in raw.splitlines() if l.strip()]
+    lines = [line for line in raw.splitlines() if line.strip()]
     assert len(lines) == 1, f"Expected 1 structured event, got {len(lines)}: {raw}"
 
     event = json.loads(lines[0])
@@ -191,7 +189,7 @@ def test_throttle_event_correlation(capsys):
         response = _dispatch(middleware, req, policy)
 
     raw = capsys.readouterr().out.strip()
-    lines = [l for l in raw.splitlines() if l.strip()]
+    lines = [line for line in raw.splitlines() if line.strip()]
     assert len(lines) == 1, f"Expected 1 structured event, got {len(lines)}: {raw}"
 
     event = json.loads(lines[0])
@@ -248,7 +246,7 @@ def test_allow_event_correlation(capsys):
     response = _dispatch(middleware, req, policy)
 
     raw = capsys.readouterr().out.strip()
-    lines = [l for l in raw.splitlines() if l.strip()]
+    lines = [line for line in raw.splitlines() if line.strip()]
     assert len(lines) == 1, f"Expected 1 structured event, got {len(lines)}: {raw}"
 
     event = json.loads(lines[0])
@@ -290,7 +288,7 @@ def test_no_duplicate_events_for_single_detection(capsys):
     _dispatch(middleware, req, policy)
 
     raw = capsys.readouterr().out.strip()
-    lines = [l for l in raw.splitlines() if l.strip()]
+    lines = [line for line in raw.splitlines() if line.strip()]
     assert len(lines) == 1, (
         f"Duplicate event detected: expected 1 stdout line, got {len(lines)}\n{raw}"
     )

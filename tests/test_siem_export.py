@@ -18,7 +18,7 @@ import json
 
 import pytest
 
-from app.security.siem_export import build_siem_event, _derive_severity
+from app.security.siem_export import _derive_severity, build_siem_event
 
 # All fields that must be present in every SIEM event (flat scalars only)
 SIEM_REQUIRED_FIELDS = {

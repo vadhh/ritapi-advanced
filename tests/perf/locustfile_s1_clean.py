@@ -13,7 +13,6 @@ import os
 
 from locust import HttpUser, between, task
 
-
 _JWT = os.environ.get("PERF_JWT", "")
 _TENANT = "perf-tenant"
 

@@ -18,9 +18,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.middlewares.detection_schema import append_detection, ensure_detections_container
 from app.policies.service import DEFAULT_POLICY, get_policy
-from app.utils.tenant_key import tenant_scoped_key
 from app.utils.metrics import rate_limit_hits, requests_total, threat_score
 from app.utils.redis_client import RedisClientSingleton
+from app.utils.tenant_key import tenant_scoped_key
 
 logger = logging.getLogger(__name__)
 
@@ -94,10 +94,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             # Build one key per identity: IP and (if present) API key
             identities = []
             if client_ip:
-                identities.append(("ip", tenant_scoped_key(tenant_id, "rate:ip", f"{client_ip}:{path_key}")))
+                identities.append(
+                    ("ip", tenant_scoped_key(tenant_id, "rate:ip", f"{client_ip}:{path_key}"))
+                )
             if api_key:
                 api_key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:16]
-                identities.append(("apikey", tenant_scoped_key(tenant_id, "rate:apikey", f"{api_key_hash}:{path_key}")))
+                key = tenant_scoped_key(tenant_id, "rate:apikey", f"{api_key_hash}:{path_key}")
+                identities.append(("apikey", key))
 
             for id_type, rate_key in identities:
                 log_key = rate_key.replace(":rate:", ":rate_log:")

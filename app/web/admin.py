@@ -203,7 +203,9 @@ async def issue_key(
 
     ttl_seconds = body.ttl_days * 86400 if body.ttl_days else None
     try:
-        raw_key = issue_api_key(body.subject, role.name, tenant_id=body.tenant_id, ttl_seconds=ttl_seconds)
+        raw_key = issue_api_key(
+            body.subject, role.name, tenant_id=body.tenant_id, ttl_seconds=ttl_seconds
+        )
     except RuntimeError as e:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)

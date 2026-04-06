@@ -122,7 +122,10 @@ class HardGateMiddleware(BaseHTTPMiddleware):
             trigger_type=trigger_type,
             trigger_source="hard_gate",
         )
-        logger.warning("HardGate: blocking %s %s from %s — %s", request.method, request.url.path, ip, reason)
+        logger.warning(
+            "HardGate: blocking %s %s from %s — %s",
+            request.method, request.url.path, ip, reason,
+        )
         return JSONResponse(
             {"error": "Forbidden", "detail": reason},
             status_code=403,
@@ -151,7 +154,7 @@ class HardGateMiddleware(BaseHTTPMiddleware):
             if matches:
                 reason = f"YARA rule match: {matches[0].rule}"
                 return self._hard_block(request, ip, request_id, "yara", reason)
-        except Exception:
+        except Exception:  # noqa: S110
             pass
         return None
 
@@ -194,7 +197,7 @@ class HardGateMiddleware(BaseHTTPMiddleware):
                     status_code=429,
                     headers={"X-Request-ID": request_id},
                 )
-        except Exception:
+        except Exception:  # noqa: S110
             pass
         return None
 
@@ -229,6 +232,6 @@ class HardGateMiddleware(BaseHTTPMiddleware):
                 return self._hard_block(
                     request, ip, request_id, "invalid_api_key", "Invalid or revoked API key"
                 )
-        except Exception:
+        except Exception:  # noqa: S110
             pass
         return None

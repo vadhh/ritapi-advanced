@@ -15,9 +15,9 @@ from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.middlewares.detection_schema import append_detection
-from app.utils.tenant_key import tenant_scoped_key
 from app.utils.metrics import bot_blocks, bot_signals, requests_total, threat_score
 from app.utils.redis_client import RedisClientSingleton
+from app.utils.tenant_key import tenant_scoped_key
 
 logger = logging.getLogger(__name__)
 
@@ -228,7 +228,8 @@ class BotDetectionMiddleware(BaseHTTPMiddleware):
         redis_pre = RedisClientSingleton.get_client()
         if redis_pre is not None:
             try:
-                existing_risk = int(redis_pre.get(tenant_scoped_key(tenant_id, "bot:risk", ip)) or 0)
+                risk_key = tenant_scoped_key(tenant_id, "bot:risk", ip)
+                existing_risk = int(redis_pre.get(risk_key) or 0)
                 if existing_risk >= BLOCK_THRESHOLD:
                     logger.warning(
                         "Bot pre-block %s on %s — cumulative risk %d >= %d",

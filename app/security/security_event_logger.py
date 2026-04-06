@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import Request
@@ -89,7 +89,7 @@ def log_security_event(
             started_at = getattr(request.state, "started_at", None)
             if isinstance(started_at, (int, float)):
                 latency_ms = round((time.monotonic() - started_at) * 1000, 2)
-        except Exception:
+        except Exception:  # noqa: S110
             pass
 
         detections = _safe_detections(request)
@@ -98,7 +98,7 @@ def log_security_event(
         event = build_siem_event(
             action=_safe_str(action, "allow"),
             status_code=status_code,
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             request_id=request_id,
             tenant_id=tenant_id,
             source_ip=_get_source_ip(request),
@@ -116,5 +116,5 @@ def log_security_event(
         event["detections"] = detections
 
         print(json.dumps(event, ensure_ascii=False))
-    except Exception:
+    except Exception:  # noqa: S110
         pass

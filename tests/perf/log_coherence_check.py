@@ -95,7 +95,7 @@ def main() -> None:
     parse_errors = 0
 
     def _summary(*_):
-        print(f"\n--- Log Coherence Summary ---")
+        print("\n--- Log Coherence Summary ---")
         print(f"  SIEM events checked : {total}")
         print(f"  Field violations    : {violations}")
         print(f"  JSON parse errors   : {parse_errors}")
