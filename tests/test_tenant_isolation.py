@@ -7,11 +7,7 @@ Verifies:
 - Per-tenant policy file is loaded when present; global policy is used when absent
 - Redis key for tenant_a contains "tenant_a" and does not match tenant_b's key pattern
 """
-import os
-from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # Redis key isolation tests (integration — require Redis)

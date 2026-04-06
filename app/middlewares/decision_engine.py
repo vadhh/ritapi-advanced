@@ -69,7 +69,6 @@ class DecisionEngineMiddleware(BaseHTTPMiddleware):
                 ip,
                 detections,
             )
-        any_structured_log = False
         for detection in detections:
             det_type = detection.get("type", "unknown")
             score = detection.get("score", 0.0)
@@ -79,13 +78,13 @@ class DecisionEngineMiddleware(BaseHTTPMiddleware):
             action = policy.decision_actions.get_action(det_type)
 
             if action == "block":
-                return self._block_response(request, ip, reason, det_type, score, status_code, source)
+                return self._block_response(
+                    request, ip, reason, det_type, score, status_code, source
+                )
             elif action == "throttle":
                 self._apply_throttle(request, ip, reason, det_type, score, source)
-                any_structured_log = True
             elif action == "monitor":
                 self._log_monitor(request, ip, reason, det_type, score, source)
-                any_structured_log = True
             else:
                 # action == "allow": emit structured event for full traceability
                 log_security_event(
@@ -96,14 +95,14 @@ class DecisionEngineMiddleware(BaseHTTPMiddleware):
                     trigger_type=det_type,
                     trigger_source=source,
                 )
-                any_structured_log = True
-
         # Legacy block flag support — DEPRECATED, will be removed in a future release.
         # Migrate to: append_detection(request, detection_type="...", ...)
         if getattr(request.state, "block", False):
             self._warn_legacy_block(request)
             reason = getattr(request.state, "block_reason", "Security policy violation")
-            return self._block_response(request, ip, reason, "decision_engine", 1.0, 403, "decision_engine")
+            return self._block_response(
+                request, ip, reason, "decision_engine", 1.0, 403, "decision_engine"
+            )
 
         # Route handler executes only if no block
         call_next = handler

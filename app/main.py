@@ -50,10 +50,10 @@ app.add_middleware(InjectionDetectionMiddleware)
 app.add_middleware(BotDetectionMiddleware)
 app.add_middleware(SchemaEnforcementMiddleware)     # after auth, validates body per policy
 app.add_middleware(AuthMiddleware)                  # after rate limit, before WAF
-app.add_middleware(RateLimitMiddleware)             # outermost detection: catches floods before auth
-app.add_middleware(HardGateMiddleware)              # tier-1 unconditional blocks before detection stack
-app.add_middleware(TenantContextMiddleware)         # resolves X-Target-ID → request.state.tenant_id
-app.add_middleware(RequestIDMiddleware)             # outermost: assigns request ID, measures latency
+app.add_middleware(RateLimitMiddleware)       # outermost detection: catches floods before auth
+app.add_middleware(HardGateMiddleware)        # tier-1 unconditional blocks before detection stack
+app.add_middleware(TenantContextMiddleware)   # resolves X-Target-ID → request.state.tenant_id
+app.add_middleware(RequestIDMiddleware)       # outermost: assigns request ID, measures latency
 
 # Routes
 app.include_router(dashboard_router)

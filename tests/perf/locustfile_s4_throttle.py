@@ -15,7 +15,7 @@ Note: flush Redis before re-running to reset counters:
 """
 import os
 
-from locust import HttpUser, constant, task, events
+from locust import HttpUser, constant, events, task
 
 _JWT = os.environ.get("PERF_JWT", "")
 _TENANT = "throttle-tenant"

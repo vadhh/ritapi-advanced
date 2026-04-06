@@ -19,20 +19,16 @@ Run with:
 """
 import asyncio
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi import Request
 from starlette.responses import JSONResponse as StarletteJSONResponse
 
-from app.middlewares.auth import AuthMiddleware
-from app.middlewares.decision_engine import DecisionEngineMiddleware
-from app.middlewares.detection_schema import ensure_detections_container
-from app.middlewares.tenant_context import TenantContextMiddleware, _TENANT_ID_RE
-from app.auth.jwt_handler import create_access_token, verify_token
 from app.auth.api_key_handler import issue_api_key
-from app.policies.service import DEFAULT_POLICY
-
+from app.auth.jwt_handler import create_access_token, verify_token
+from app.middlewares.auth import AuthMiddleware
+from app.middlewares.detection_schema import ensure_detections_container
+from app.middlewares.tenant_context import _TENANT_ID_RE, TenantContextMiddleware
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -221,7 +217,7 @@ class TestAuthTenantMismatch:
             tenant_id="tenant-a",
             token_claims={"sub": "alice", "role": "VIEWER", "tid": "tenant-a"},
         )
-        resp = self._dispatch_auth(req, token_claims={"sub": "alice", "role": "VIEWER", "tid": "tenant-a"})
+        self._dispatch_auth(req, token_claims={"sub": "alice", "role": "VIEWER", "tid": "tenant-a"})
 
         assert req.state.detections == [] or all(
             d["type"] != "auth_failure" for d in req.state.detections
@@ -229,9 +225,9 @@ class TestAuthTenantMismatch:
 
         print(f"\n{'='*60}")
         print("PROOF — JWT tenant match: ALLOWED")
-        print(f"  credential_tenant = 'tenant-a'")
-        print(f"  X-Target-ID       = 'tenant-a'")
-        print(f"  result            = request passes through")
+        print("  credential_tenant = 'tenant-a'")
+        print("  X-Target-ID       = 'tenant-a'")
+        print("  result            = request passes through")
 
     def test_jwt_mismatched_tenant_blocked(self, capsys):
         """Token for tenant-a + X-Target-ID: tenant-b → auth_failure detection."""
@@ -240,7 +236,7 @@ class TestAuthTenantMismatch:
             token_claims={"sub": "alice", "role": "VIEWER", "tid": "tenant-a"},  # but token is tenant-a
         )
         ensure_detections_container(req)
-        resp = self._dispatch_auth(req, token_claims={"sub": "alice", "role": "VIEWER", "tid": "tenant-a"})
+        self._dispatch_auth(req, token_claims={"sub": "alice", "role": "VIEWER", "tid": "tenant-a"})
 
         auth_failure_detections = [
             d for d in req.state.detections if d.get("type") == "auth_failure"
@@ -255,9 +251,9 @@ class TestAuthTenantMismatch:
 
         print(f"\n{'='*60}")
         print("PROOF — JWT tenant mismatch: BLOCKED")
-        print(f"  credential_tenant = 'tenant-a'  (embedded in JWT)")
-        print(f"  X-Target-ID       = 'tenant-b'  (request header)")
-        print(f"  detection         = auth_failure  score=1.0")
+        print("  credential_tenant = 'tenant-a'  (embedded in JWT)")
+        print("  X-Target-ID       = 'tenant-b'  (request header)")
+        print("  detection         = auth_failure  score=1.0")
         print(f"  metadata          = {json.dumps(det['metadata'], indent=4)}")
 
     def test_api_key_mismatched_tenant_blocked(self):
@@ -296,14 +292,12 @@ def test_redis_key_namespace_proof():
 
     Verifies key patterns directly from the middleware source — no Redis needed.
     """
-    from app.middlewares.bot_detection import _detect, _accumulate_risk
-    from app.middlewares.rate_limit import RateLimitMiddleware
 
     ip = "10.0.0.1"
 
     # Bot detection keys
-    tenant_a_bot_prefix = f"ritapi:tenant-a:bot:"
-    tenant_b_bot_prefix = f"ritapi:tenant-b:bot:"
+    tenant_a_bot_prefix = "ritapi:tenant-a:bot:"
+    tenant_b_bot_prefix = "ritapi:tenant-b:bot:"
 
     # Rate limit keys
     tenant_a_rate_key = f"ritapi:tenant-a:rate:ip:{ip}:_api_v1_resource"

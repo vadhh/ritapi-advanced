@@ -1,5 +1,3 @@
-import os
-import pytest
 from unittest.mock import MagicMock
 
 
@@ -19,6 +17,7 @@ def test_legacy_token_passes_when_strict_mode_off(monkeypatch):
 def test_legacy_token_blocked_when_strict_mode_on(monkeypatch):
     monkeypatch.setenv("TENANT_STRICT_MODE", "true")
     import importlib
+
     import app.middlewares.auth as auth_mod
     importlib.reload(auth_mod)
 
@@ -36,6 +35,7 @@ def test_legacy_token_blocked_when_strict_mode_on(monkeypatch):
 def test_bound_token_passes_in_strict_mode(monkeypatch):
     monkeypatch.setenv("TENANT_STRICT_MODE", "true")
     import importlib
+
     import app.middlewares.auth as auth_mod
     importlib.reload(auth_mod)
 
@@ -50,8 +50,9 @@ def test_bound_token_passes_in_strict_mode(monkeypatch):
 
 # ── Test 4: legacy request.state.block emits deprecation warning ──────────────
 def test_legacy_block_flag_emits_warning(caplog):
-    import logging
     import importlib
+    import logging
+
     import app.middlewares.decision_engine as de_mod
     importlib.reload(de_mod)
 

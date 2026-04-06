@@ -20,12 +20,10 @@ import asyncio
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi import Request
 from starlette.responses import JSONResponse as StarletteJSONResponse
 
 from app.middlewares.decision_engine import DecisionEngineMiddleware
-from app.middlewares.detection_schema import append_detection
 from app.policies.service import DecisionActions, Policy
 
 # ---------------------------------------------------------------------------
@@ -72,7 +70,7 @@ def _print_proof(label: str, req: MagicMock, detection: dict, event: dict) -> No
     print(f"\n{'='*64}")
     print(f"PROOF — {label}")
     print('='*64)
-    print(f"\nREQUEST:")
+    print("\nREQUEST:")
     print(f"  {req.method} {req.url.path}  (ip={req.headers.get.return_value},"
           f" tenant={req.state.tenant_id})")
     print(f"\nDETECTION appended by {detection.get('source', '?')}:")
@@ -80,7 +78,7 @@ def _print_proof(label: str, req: MagicMock, detection: dict, event: dict) -> No
           f"  reason={detection['reason'][:70]}")
     print(f"\nFINAL ACTION chosen by DecisionEngine: {event['action'].upper()}"
           f"  →  severity={event['severity']}  status={event['status_code']}")
-    print(f"\nSIEM EVENT (stdout — canonical audit log):")
+    print("\nSIEM EVENT (stdout — canonical audit log):")
     print(json.dumps(event, indent=2))
 
 
@@ -118,7 +116,7 @@ def test_injection_block_full_flow(capsys):
     response = _dispatch(middleware, req, policy)
 
     raw = capsys.readouterr().out.strip()
-    lines = [l for l in raw.splitlines() if l.strip()]
+    lines = [line for line in raw.splitlines() if line.strip()]
 
     # Exactly one structured event — no middleware-level duplicates
     assert len(lines) == 1, f"Expected 1 SIEM event, got {len(lines)}"
@@ -175,7 +173,7 @@ def test_bot_throttle_full_flow(capsys):
         response = _dispatch(middleware, req, policy)
 
     raw = capsys.readouterr().out.strip()
-    lines = [l for l in raw.splitlines() if l.strip()]
+    lines = [line for line in raw.splitlines() if line.strip()]
 
     assert len(lines) == 1, f"Expected 1 SIEM event, got {len(lines)}"
 
@@ -227,7 +225,7 @@ def test_exfiltration_block_full_flow(capsys):
     response = _dispatch(middleware, req, policy)
 
     raw = capsys.readouterr().out.strip()
-    lines = [l for l in raw.splitlines() if l.strip()]
+    lines = [line for line in raw.splitlines() if line.strip()]
 
     assert len(lines) == 1, f"Expected 1 SIEM event, got {len(lines)}"
 
@@ -285,10 +283,10 @@ def test_multiple_detections_block_wins(capsys):
         decision_actions=DecisionActions(on_rate_limit="block", on_injection="block"),
     )
     middleware = DecisionEngineMiddleware(app=MagicMock())
-    response = _dispatch(middleware, req, policy)
+    _dispatch(middleware, req, policy)
 
     raw = capsys.readouterr().out.strip()
-    lines = [l for l in raw.splitlines() if l.strip()]
+    lines = [line for line in raw.splitlines() if line.strip()]
 
     # Only one event — loop stops at first block
     assert len(lines) == 1, f"Expected 1 SIEM event, got {len(lines)}"
@@ -310,5 +308,5 @@ def test_multiple_detections_block_wins(capsys):
     print(f"  detection_types : {event['detection_types']}")
     print(f"  trigger_type    : {event['trigger_type']}  (rate_limit fired first)")
     print(f"  action          : {event['action']}")
-    print(f"\nSIEM EVENT:")
+    print("\nSIEM EVENT:")
     print(json.dumps(event, indent=2))

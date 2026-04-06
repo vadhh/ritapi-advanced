@@ -19,7 +19,6 @@ import logging
 import os
 
 from fastapi import Request
-from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.auth.api_key_handler import validate_api_key
@@ -112,7 +111,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 request,
                 detection_type="auth_failure",
                 score=1.0,
-                reason="No valid credential (attempted: {})".format(auth_method),
+                reason=f"No valid credential (attempted: {auth_method})",
                 status_code=401,
                 source="auth",
                 metadata={"auth_method": auth_method, "path": path},

@@ -15,7 +15,7 @@ format_siem_event(request, decision) -> dict
 """
 import json
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 def format_siem_event(request, decision: dict) -> dict:
@@ -41,7 +41,7 @@ def format_siem_event(request, decision: dict) -> dict:
         "source_ip": request.client.host if request.client else "unknown",
         "route": request.url.path,
         "reason": decision.get("reason", ""),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "request_id": getattr(request.state, "request_id", ""),
     }
 
@@ -76,7 +76,7 @@ def log_decision(request, decision: dict) -> None:
         try:
             if request.client:
                 client_ip = _safe_str(request.client.host, default="unknown")
-        except Exception:
+        except Exception:  # noqa: S110
             pass
 
         raw_detections = getattr(request.state, "detections", None)
@@ -118,5 +118,5 @@ def log_decision(request, decision: dict) -> None:
             "siem_event": siem_event,
         }
         print(json.dumps(record))
-    except Exception:
+    except Exception:  # noqa: S110
         pass

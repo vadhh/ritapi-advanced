@@ -28,7 +28,6 @@ import random
 
 from locust import HttpUser, between, task
 
-
 _TOKEN = os.getenv("LOCUST_TOKEN", "")
 _AUTH_HEADERS = {
     "Authorization": f"Bearer {_TOKEN}",
@@ -64,7 +63,7 @@ class LegitimateUser(HttpUser):
 
     @task(5)
     def get_resource(self):
-        path = random.choice(_PATHS)
+        path = random.choice(_PATHS)  # noqa: S311
         with self.client.get(
             path,
             headers=_AUTH_HEADERS,
@@ -111,7 +110,7 @@ class AttackerUser(HttpUser):
 
     @task(3)
     def injection_attempt(self):
-        payload = random.choice(_XSS_PAYLOADS)
+        payload = random.choice(_XSS_PAYLOADS)  # noqa: S311
         with self.client.post(
             "/api/data",
             headers={**_AUTH_HEADERS, "User-Agent": "sqlmap/1.7"},
