@@ -74,9 +74,13 @@ def _incrby(redis, key: str, amount: int, ttl: int) -> int:
 
 
 def _sadd_count(redis, key: str, member: str, ttl: int) -> int:
-    redis.sadd(key, member)
-    redis.expire(key, ttl)
-    return redis.scard(key)
+    """Add member to a Redis set, refresh TTL, return cardinality (single pipeline)."""
+    pipe = redis.pipeline()
+    pipe.sadd(key, member)
+    pipe.expire(key, ttl)
+    pipe.scard(key)
+    _, _, count = pipe.execute()
+    return count
 
 
 # ---------------------------------------------------------------------------

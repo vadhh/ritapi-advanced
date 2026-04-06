@@ -88,8 +88,10 @@ class HardGateMiddleware(BaseHTTPMiddleware):
                     request, ip, request_id, "blocked_asn", f"ASN {asn} is blocked"
                 )
 
-        # 3. YARA match on request body (skip gracefully if scanner unavailable)
+        # 3. YARA match on request body (skip gracefully if scanner unavailable).
+        # Always mark yara_scanned=True so InjectionDetectionMiddleware skips a second scan.
         yara_block = await self._check_yara(request, ip, request_id)
+        request.state.yara_scanned = True
         if yara_block is not None:
             return yara_block
 

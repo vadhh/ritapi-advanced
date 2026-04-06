@@ -80,10 +80,13 @@ def _get_int(redis, key: str) -> int:
 
 
 def _sadd_count(redis, key: str, member: str, ttl: int) -> int:
-    """Add member to a Redis set, refresh TTL, return cardinality."""
-    redis.sadd(key, member)
-    redis.expire(key, ttl)
-    return redis.scard(key)
+    """Add member to a Redis set, refresh TTL, return cardinality (single pipeline)."""
+    pipe = redis.pipeline()
+    pipe.sadd(key, member)
+    pipe.expire(key, ttl)
+    pipe.scard(key)
+    _, _, count = pipe.execute()
+    return count
 
 
 # ---------------------------------------------------------------------------

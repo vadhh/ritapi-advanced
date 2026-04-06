@@ -98,14 +98,24 @@ class DecisionEngineMiddleware(BaseHTTPMiddleware):
                 )
                 any_structured_log = True
 
-        # Legacy block flag support
+        # Legacy block flag support — DEPRECATED, will be removed in a future release.
+        # Migrate to: append_detection(request, detection_type="...", ...)
         if getattr(request.state, "block", False):
+            self._warn_legacy_block(request)
             reason = getattr(request.state, "block_reason", "Security policy violation")
             return self._block_response(request, ip, reason, "decision_engine", 1.0, 403, "decision_engine")
 
         # Route handler executes only if no block
         call_next = handler
         return await call_next(request)
+
+    def _warn_legacy_block(self, request: Request) -> None:
+        """Emit a deprecation warning for the legacy request.state.block flag."""
+        logger.warning(
+            "DEPRECATED: request.state.block flag detected on %s %s — "
+            "migrate to append_detection() instead of setting request.state.block directly",
+            request.method, request.url.path,
+        )
 
     def _block_response(
         self,

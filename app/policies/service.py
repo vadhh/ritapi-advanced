@@ -55,6 +55,7 @@ class DecisionActions:
     on_exfiltration: str = "monitor"
     on_exfiltration_block: str = "block"  # pre-request block when counter exceeded
     on_schema_violation: str = "block"  # request body fails schema validation
+    on_payload_too_large: str = "block"  # request body exceeds MAX_BODY size cap
 
     def get_action(self, detection_type: str) -> str:
         """Return the action for a detection type.

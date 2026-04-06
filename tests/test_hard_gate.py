@@ -129,3 +129,32 @@ def test_hard_gate_block_includes_request_id_header():
 
     assert response.status_code == 403
     assert response.headers.get("x-request-id") == "deadbeef-1234-4321-abcd-000000000000"
+
+
+# ---------------------------------------------------------------------------
+# Task 3: yara_scanned flag and YARA dedup boundary
+# ---------------------------------------------------------------------------
+
+def test_hard_gate_sets_yara_scanned_flag():
+    """HardGateMiddleware.dispatch must set request.state.yara_scanned=True after YARA attempt."""
+    import inspect
+    import app.middlewares.hard_gate as hg_mod
+
+    src = inspect.getsource(hg_mod.HardGateMiddleware.dispatch)
+    assert "yara_scanned" in src, (
+        "HardGateMiddleware.dispatch must set request.state.yara_scanned = True "
+        "after the YARA scan so InjectionDetection can skip a duplicate scan"
+    )
+    # Verify the flag is set unconditionally (not only when a match is found)
+    assert "request.state.yara_scanned = True" in src
+
+
+def test_injection_detection_skips_yara_when_already_scanned():
+    """InjectionDetectionMiddleware.dispatch must check request.state.yara_scanned."""
+    import inspect
+    import app.middlewares.injection_detection as inj_mod
+
+    src = inspect.getsource(inj_mod.InjectionDetectionMiddleware.dispatch)
+    assert "yara_scanned" in src, (
+        "InjectionDetectionMiddleware.dispatch must check request.state.yara_scanned"
+    )

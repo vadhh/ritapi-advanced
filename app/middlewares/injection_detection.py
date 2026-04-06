@@ -14,7 +14,6 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.middlewares.detection_schema import append_detection, ensure_detections_container
-from app.security.security_event_logger import log_security_event
 from app.utils.metrics import injection_blocks, requests_total, threat_score
 
 logger = logging.getLogger(__name__)
@@ -256,16 +255,16 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
             body = await request.body()
 
             if len(body) > MAX_BODY:
-                # Bypass — does not reach DecisionEngine; emit canonical event directly.
-                log_security_event(
+                append_detection(
                     request,
-                    action="block",
-                    status_code=413,
+                    detection_type="payload_too_large",
+                    score=1.0,
                     reason=f"Body size {len(body)} exceeds {MAX_BODY} bytes",
-                    trigger_type="payload_too_large",
-                    trigger_source="injection_detection",
+                    status_code=413,
+                    source="injection_detection",
+                    metadata={"body_size": len(body), "limit": MAX_BODY},
                 )
-                return JSONResponse({"error": "Request body too large."}, status_code=413)
+                return await call_next(request)
 
             body_text = body.decode("utf-8", errors="replace")
 
@@ -305,27 +304,28 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
             except (json.JSONDecodeError, ValueError):
                 pass  # not JSON — plain text scan above is sufficient
 
-            # --- 4. YARA scan (best-effort) ---
-            try:
-                from app.utils.yara_scanner import get_yara_scanner
-                scanner = get_yara_scanner()
-                if scanner.rules_loaded:
-                    matches = scanner.scan_payload(body)
-                    if matches:
-                        top = matches[0]
-                        self._log_and_block(client_ip, request, f"yara:{top.rule}", top.rule)
-                        append_detection(
-                            request,
-                            detection_type="injection",
-                            score=0.95,
-                            reason=f"yara:{top.rule}: {top.rule}",
-                            status_code=403,
-                            source="injection_detection",
-                            metadata={"category": "yara", "rule": top.rule, "signal": "yara"},
-                        )
-                        return await call_next(request)
-            except Exception as e:
-                logger.debug("YARA scan skipped: %s", e)
+            # --- 4. YARA scan (best-effort, skipped if HardGateMiddleware already ran) ---
+            if not getattr(request.state, "yara_scanned", False):
+                try:
+                    from app.utils.yara_scanner import get_yara_scanner
+                    scanner = get_yara_scanner()
+                    if scanner.rules_loaded:
+                        matches = scanner.scan_payload(body)
+                        if matches:
+                            top = matches[0]
+                            self._log_and_block(client_ip, request, f"yara:{top.rule}", top.rule)
+                            append_detection(
+                                request,
+                                detection_type="injection",
+                                score=0.95,
+                                reason=f"yara:{top.rule}: {top.rule}",
+                                status_code=403,
+                                source="injection_detection",
+                                metadata={"category": "yara", "rule": top.rule, "signal": "yara"},
+                            )
+                            return await call_next(request)
+                except Exception as e:
+                    logger.debug("YARA scan skipped: %s", e)
 
         return await call_next(request)
 

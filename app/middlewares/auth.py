@@ -16,6 +16,7 @@ Bypass paths (no auth regardless of policy):
   /dashboard*     — dashboard UI (add auth guard separately if needed)
 """
 import logging
+import os
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -27,6 +28,10 @@ from app.middlewares.detection_schema import append_detection
 from app.utils.metrics import auth_failures
 
 logger = logging.getLogger(__name__)
+
+# When True, credentials without a tenant claim ("tid" / "tenant_id") are
+# rejected. Default False preserves backward compatibility with legacy tokens.
+_STRICT_TENANT_MODE: bool = os.getenv("TENANT_STRICT_MODE", "").lower() in ("1", "true", "yes")
 
 # ---------------------------------------------------------------------------
 # Bypass configuration

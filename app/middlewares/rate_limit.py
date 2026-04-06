@@ -108,7 +108,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     current, _ = pipe.execute()
 
                     if current > rate_limit:
-                        if not redis.exists(log_key):
+                        # SET NX EX: atomic log-dedup — True only on first breach per window
+                        was_first = redis.set(log_key, "1", ex=rate_window, nx=True)
+                        if was_first:
                             identity_label = client_ip if id_type == "ip" else f"key:{api_key[:8]}…"
                             logger.warning(
                                 "Rate limit exceeded for %s %s: %d/%d (window %ds)",
