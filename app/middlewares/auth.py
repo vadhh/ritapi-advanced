@@ -16,6 +16,7 @@ Bypass paths (no auth regardless of policy):
   /dashboard*     — dashboard UI (add auth guard separately if needed)
 """
 import logging
+import os
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -23,10 +24,14 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.auth.api_key_handler import validate_api_key
 from app.auth.jwt_handler import get_token_from_request, verify_token
-from app.utils.logging import log_request
+from app.middlewares.detection_schema import append_detection
 from app.utils.metrics import auth_failures
 
 logger = logging.getLogger(__name__)
+
+# When True, credentials without a tenant claim ("tid" / "tenant_id") are
+# rejected. Default False preserves backward compatibility with legacy tokens.
+_STRICT_TENANT_MODE: bool = os.getenv("TENANT_STRICT_MODE", "").lower() in ("1", "true", "yes")
 
 # ---------------------------------------------------------------------------
 # Bypass configuration
@@ -97,32 +102,51 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     # nosemgrep: python-logger-credential-disclosure — logs IP/path, not the key
                     logger.debug("Auth: invalid API key from %s on %s", ip, path)
 
-        # 3. Reject if no valid credential
+        # 3. Reject if no valid credential — write detection and route through DecisionEngine
         if claims is None:
             logger.warning(
                 "Auth: rejected %s %s from %s (method=%s)", request.method, path, ip, auth_method
             )
             auth_failures.labels(method=auth_method).inc()
-            log_request(
-                client_ip=ip,
-                path=path,
-                method=request.method,
-                action="block",
+            append_detection(
+                request,
                 detection_type="auth_failure",
                 score=1.0,
-                reasons=f"No valid credential (attempted: {auth_method})",
-            )
-            return JSONResponse(
-                {
-                    "error": "Unauthorized",
-                    "detail": (
-                        "Provide a valid Bearer token (Authorization: Bearer <jwt>)"
-                        " or API key (X-API-Key: <key>)"
-                    ),
-                },
+                reason="No valid credential (attempted: {})".format(auth_method),
                 status_code=401,
-                headers={"WWW-Authenticate": "Bearer"},
+                source="auth",
+                metadata={"auth_method": auth_method, "path": path},
             )
+            return await call_next(request)
+
+        # 4. Tenant binding check — only when the credential carries a tenant claim.
+        # JWT embeds it as "tid"; API key metadata uses "tenant_id".
+        # Legacy credentials without either field are allowed through (backward-compat).
+        claimed_tenant = getattr(request.state, "tenant_id", "default")
+        credential_tenant = claims.get("tid") or claims.get("tenant_id")
+        if credential_tenant and credential_tenant != claimed_tenant:
+            logger.warning(
+                "Auth: tenant mismatch from %s — credential_tenant=%r claimed=%r",
+                ip, credential_tenant, claimed_tenant,
+            )
+            auth_failures.labels(method="tenant_mismatch").inc()
+            append_detection(
+                request,
+                detection_type="auth_failure",
+                score=1.0,
+                reason=(
+                    f"Tenant mismatch: credential is bound to {credential_tenant!r} "
+                    f"but request claims {claimed_tenant!r}"
+                ),
+                status_code=403,
+                source="auth",
+                metadata={
+                    "credential_tenant": credential_tenant,
+                    "claimed_tenant": claimed_tenant,
+                    "auth_method": auth_method,
+                },
+            )
+            return await call_next(request)
 
         # Attach claims for RBAC and route handlers
         request.state.claims = claims
