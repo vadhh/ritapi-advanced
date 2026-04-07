@@ -29,6 +29,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.security.security_event_logger import log_security_event
 from app.utils.redis_client import RedisClientSingleton
+from app.utils.tenant_key import tenant_scoped_key
 
 logger = logging.getLogger(__name__)
 
@@ -168,10 +169,10 @@ class HardGateMiddleware(BaseHTTPMiddleware):
             if redis is None:
                 return None
 
-            raw_tid = getattr(request.state, "tenant_id", None)
+            raw_tid = getattr(request.state, "claimed_tenant_id", None)
             tenant_id = raw_tid if isinstance(raw_tid, str) and raw_tid else "default"
 
-            key = f"ritapi:{tenant_id}:spike:{ip}"
+            key = tenant_scoped_key(tenant_id, "spike", ip)
             pipe = redis.pipeline()
             pipe.incr(key)
             pipe.expire(key, 1, nx=True)

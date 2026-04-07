@@ -60,6 +60,12 @@ app.include_router(dashboard_router)
 app.include_router(admin_router)
 
 
+@app.get("/probe", tags=["Probe"])
+def probe():
+    print("BACKEND EXECUTED")
+    return {"backend": "executed"}
+
+
 @app.get("/healthz", tags=["Health"])
 def health():
     return {"status": "ok"}

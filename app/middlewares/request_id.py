@@ -13,6 +13,7 @@ import sys
 import time
 import uuid
 
+from app.utils.perf import get_perf
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
@@ -24,8 +25,11 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         request_id = str(uuid.uuid4())
         request.state.request_id = request_id
         request.state.started_at = time.monotonic()
+        # Initialise perf dict early so every downstream middleware can write into it.
+        request.state.perf = {}
         response = await call_next(request)
         elapsed = (time.monotonic() - request.state.started_at) * 1000
+        get_perf(request)["total_ms"] = round(elapsed, 3)
         if elapsed > _PERF_WARN_MS:
             print(
                 f"[PERF] {request.url.path} took {elapsed:.1f}ms"

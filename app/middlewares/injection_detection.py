@@ -7,6 +7,7 @@ YARA scan is attempted after regex; silently skipped if scanner not loaded.
 import html
 import logging
 import re
+import time as _time
 from urllib.parse import unquote
 
 from fastapi import Request
@@ -15,6 +16,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.middlewares.detection_schema import append_detection, ensure_detections_container
 from app.utils.metrics import injection_blocks, requests_total, threat_score
+from app.utils.perf import get_perf
 
 logger = logging.getLogger(__name__)
 
@@ -218,10 +220,13 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
             or (request.client.host if request.client else "")
         )
 
+        _t0 = _time.monotonic()
+
         # --- 1. Scanner user-agent check ---
         ua = request.headers.get("user-agent", "")
         hit, category, snippet = _scan_value("user_agent", ua)
         if hit:
+            get_perf(request)["injection_ms"] = round((_time.monotonic() - _t0) * 1000, 3)
             self._log_and_block(client_ip, request, category, snippet)
             append_detection(
                 request,
@@ -238,6 +243,7 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
         raw_url = str(request.url)
         hit, category, snippet = _scan_value("url", raw_url)
         if hit:
+            get_perf(request)["injection_ms"] = round((_time.monotonic() - _t0) * 1000, 3)
             self._log_and_block(client_ip, request, category, snippet)
             append_detection(
                 request,
@@ -255,6 +261,7 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
             body = await request.body()
 
             if len(body) > MAX_BODY:
+                get_perf(request)["injection_ms"] = round((_time.monotonic() - _t0) * 1000, 3)
                 append_detection(
                     request,
                     detection_type="payload_too_large",
@@ -271,6 +278,7 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
             # Plain text scan
             hit, category, snippet = _scan_value("body", body_text)
             if hit:
+                get_perf(request)["injection_ms"] = round((_time.monotonic() - _t0) * 1000, 3)
                 self._log_and_block(client_ip, request, category, snippet)
                 append_detection(
                     request,
@@ -290,6 +298,7 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
                 if isinstance(payload, (dict, list)):
                     hit, category, snippet = _scan_recursive(payload)
                     if hit:
+                        get_perf(request)["injection_ms"] = round((_time.monotonic() - _t0) * 1000, 3)
                         self._log_and_block(client_ip, request, category, snippet)
                         append_detection(
                             request,
@@ -313,6 +322,7 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
                         matches = scanner.scan_payload(body)
                         if matches:
                             top = matches[0]
+                            get_perf(request)["injection_ms"] = round((_time.monotonic() - _t0) * 1000, 3)
                             self._log_and_block(client_ip, request, f"yara:{top.rule}", top.rule)
                             append_detection(
                                 request,
@@ -327,6 +337,7 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
                 except Exception as e:
                     logger.debug("YARA scan skipped: %s", e)
 
+        get_perf(request)["injection_ms"] = round((_time.monotonic() - _t0) * 1000, 3)
         return await call_next(request)
 
     @staticmethod

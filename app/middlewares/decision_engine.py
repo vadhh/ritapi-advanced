@@ -22,6 +22,7 @@ Legacy support: request.state.block = True still triggers a block for middleware
 that short-circuit directly.
 """
 import logging
+import time as _time
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -31,6 +32,7 @@ from app.middlewares.detection_schema import normalize_detection
 from app.policies.service import get_policy
 from app.routing.service import resolve_route
 from app.security.security_event_logger import log_security_event
+from app.utils.perf import get_perf
 from app.utils.redis_client import RedisClientSingleton
 from app.utils.tenant_key import tenant_scoped_key
 
@@ -39,6 +41,7 @@ logger = logging.getLogger(__name__)
 
 class DecisionEngineMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, handler):
+        _t_de = _time.monotonic()
         # Resolve route and attach policy to request state for other middlewares
         route = resolve_route(request.url.path, request.method)
         raw_tid = getattr(request.state, "tenant_id", None)
@@ -78,6 +81,7 @@ class DecisionEngineMiddleware(BaseHTTPMiddleware):
             action = policy.decision_actions.get_action(det_type)
 
             if action == "block":
+                get_perf(request)["decision_ms"] = round((_time.monotonic() - _t_de) * 1000, 3)
                 return self._block_response(
                     request, ip, reason, det_type, score, status_code, source
                 )
@@ -100,13 +104,28 @@ class DecisionEngineMiddleware(BaseHTTPMiddleware):
         if getattr(request.state, "block", False):
             self._warn_legacy_block(request)
             reason = getattr(request.state, "block_reason", "Security policy violation")
+            get_perf(request)["decision_ms"] = round((_time.monotonic() - _t_de) * 1000, 3)
             return self._block_response(
                 request, ip, reason, "decision_engine", 1.0, 403, "decision_engine"
             )
 
         # Route handler executes only if no block
+        get_perf(request)["decision_ms"] = round((_time.monotonic() - _t_de) * 1000, 3)
         call_next = handler
-        return await call_next(request)
+        response = await call_next(request)
+        # Emit a perf-carrying allow event only when no detection already produced a
+        # SIEM event (throttle / monitor / allow detection paths each call
+        # log_security_event themselves; this covers the zero-detection fast path).
+        if not detections and not getattr(request.state, "block", False):
+            log_security_event(
+                request,
+                action="allow",
+                status_code=response.status_code,
+                reason="clean request — no detections",
+                trigger_type="none",
+                trigger_source="decision_engine",
+            )
+        return response
 
     def _warn_legacy_block(self, request: Request) -> None:
         """Emit a deprecation warning for the legacy request.state.block flag."""

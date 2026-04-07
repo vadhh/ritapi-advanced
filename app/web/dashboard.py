@@ -106,8 +106,8 @@ def _redis_stats() -> dict[str, Any]:
 
     try:
         # Use SCAN instead of KEYS to avoid blocking Redis on large keyspaces (R2-M-1)
-        rate_count = sum(1 for _ in redis.scan_iter("ritapi:rate:ip:*"))
-        bot_count = sum(1 for _ in redis.scan_iter("bot:risk:*"))
+        rate_count = sum(1 for _ in redis.scan_iter("ritapi:*:rate:ip:*"))
+        bot_count = sum(1 for _ in redis.scan_iter("ritapi:*:bot:risk:*"))
         api_key_count = sum(1 for _ in redis.scan_iter("ritapi:apikey:*"))
         return {
             "connected": True,

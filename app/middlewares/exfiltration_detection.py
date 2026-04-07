@@ -19,12 +19,14 @@ Actions:
   - BULK_ACCESS and SEQUENTIAL_CRAWL → "block" (403) after threshold
 """
 import logging
+import time as _time
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.middlewares.detection_schema import append_detection
 from app.utils.metrics import exfiltration_alerts, requests_total, response_size_bytes
+from app.utils.perf import add_redis_ms, get_perf
 from app.utils.redis_client import RedisClientSingleton
 from app.utils.tenant_key import tenant_scoped_key
 
@@ -101,11 +103,19 @@ class ExfiltrationDetectionMiddleware(BaseHTTPMiddleware):
         pfx = tenant_scoped_key(tenant_id, "exfil")
 
         # --- Pre-request block for counter-based detections ---
+        _t_exfil_pre = _time.monotonic()
         redis_pre = RedisClientSingleton.get_client()
         if redis_pre is not None:
             try:
-                bulk_count = int(redis_pre.get(f"{pfx}:bulk:{ip}:{path}") or 0)
-                ep_count = int(redis_pre.scard(f"{pfx}:crawl:{ip}") or 0)
+                # Combine both pre-check reads into a single pipeline round-trip.
+                pipe_pre = redis_pre.pipeline()
+                pipe_pre.get(f"{pfx}:bulk:{ip}:{path}")
+                pipe_pre.scard(f"{pfx}:crawl:{ip}")
+                _t_r = _time.monotonic()
+                bulk_raw, ep_raw = pipe_pre.execute()
+                add_redis_ms(request, (_time.monotonic() - _t_r) * 1000)
+                bulk_count = int(bulk_raw or 0)
+                ep_count = int(ep_raw or 0)
                 pre_reason = None
                 if bulk_count > BULK_ACCESS_THRESHOLD:
                     pre_reason = "bulk_access"
@@ -113,6 +123,7 @@ class ExfiltrationDetectionMiddleware(BaseHTTPMiddleware):
                     pre_reason = "sequential_crawl"
 
                 if pre_reason is not None:
+                    get_perf(request)["exfil_ms"] = round((_time.monotonic() - _t_exfil_pre) * 1000, 3)
                     logger.warning(
                         "Exfiltration pre-block [%s] from %s on %s",
                         pre_reason, ip, path,
@@ -129,6 +140,7 @@ class ExfiltrationDetectionMiddleware(BaseHTTPMiddleware):
                     return await call_next(request)
             except Exception as e:
                 logger.debug("Exfil pre-request Redis check failed (fail-open): %s", e)
+        _t_exfil_pre_elapsed = (_time.monotonic() - _t_exfil_pre) * 1000
 
         # Let the request go through and capture the response
         response = await call_next(request)
@@ -167,8 +179,10 @@ class ExfiltrationDetectionMiddleware(BaseHTTPMiddleware):
         response_size_bytes.observe(body_size)
 
         # ---- Run detections (only if Redis available) --------------------
+        _t_exfil_post = _time.monotonic()
         redis = RedisClientSingleton.get_client()
         if redis is None:
+            get_perf(request)["exfil_ms"] = round(_t_exfil_pre_elapsed, 3)
             return response
 
         alerts: list[tuple[str, str]] = []  # (reason, action)
@@ -178,6 +192,7 @@ class ExfiltrationDetectionMiddleware(BaseHTTPMiddleware):
             if body_size > LARGE_RESPONSE_BYTES:
                 alerts.append(("large_response", "monitor"))
 
+            _t_r = _time.monotonic()
             # 2. High cumulative volume from this IP
             total_bytes = _incrby(redis, f"{pfx}:bytes:{ip}", body_size, VOLUME_WINDOW)
             if total_bytes > VOLUME_THRESHOLD_BYTES:
@@ -192,13 +207,20 @@ class ExfiltrationDetectionMiddleware(BaseHTTPMiddleware):
             ep_count = _sadd_count(redis, f"{pfx}:crawl:{ip}", path, CRAWL_WINDOW)
             if ep_count > CRAWL_ENDPOINT_THRESHOLD:
                 alerts.append(("sequential_crawl", "block"))
+            add_redis_ms(request, (_time.monotonic() - _t_r) * 1000)
 
         except Exception as e:
             logger.error("Exfiltration detection Redis error: %s", e)
             RedisClientSingleton.mark_failed()
+            get_perf(request)["exfil_ms"] = round(
+                _t_exfil_pre_elapsed + (_time.monotonic() - _t_exfil_post) * 1000, 3
+            )
             return response
 
         if not alerts:
+            get_perf(request)["exfil_ms"] = round(
+                _t_exfil_pre_elapsed + (_time.monotonic() - _t_exfil_post) * 1000, 3
+            )
             return response
 
         # Highest severity wins: block > monitor
@@ -225,6 +247,10 @@ class ExfiltrationDetectionMiddleware(BaseHTTPMiddleware):
         logger.warning(
             "Exfiltration alert [%s] from %s on %s — body_size=%d bytes",
             reasons, ip, path, body_size,
+        )
+
+        get_perf(request)["exfil_ms"] = round(
+            _t_exfil_pre_elapsed + (_time.monotonic() - _t_exfil_post) * 1000, 3
         )
 
         for reason, _ in alerts:

@@ -16,9 +16,12 @@ import os
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 
+import time
+
 from app.middlewares.detection_schema import append_detection, ensure_detections_container
 from app.policies.service import DEFAULT_POLICY, get_policy
 from app.utils.metrics import rate_limit_hits, requests_total, threat_score
+from app.utils.perf import add_redis_ms
 from app.utils.redis_client import RedisClientSingleton
 from app.utils.tenant_key import tenant_scoped_key
 
@@ -54,8 +57,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if any(path.startswith(p) for p in _SKIP_PREFIXES):
             return await call_next(request)
 
-        # Resolve tenant ID for key namespacing
-        raw_tid = getattr(request.state, "tenant_id", None)
+        # Resolve tenant ID for key namespacing.
+        # Rate limiting runs before AuthMiddleware, so only the *claimed*
+        # (header-supplied, sanitised) tenant is available here.  The verified
+        # tenant_id is set by AuthMiddleware after this middleware runs.
+        raw_tid = getattr(request.state, "claimed_tenant_id", None)
         tenant_id = raw_tid if isinstance(raw_tid, str) and raw_tid else "default"
 
         # Read per-route policy if available (set by DecisionEngine on prior pass).
@@ -81,15 +87,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         api_key = request.headers.get("x-api-key", "")
 
         redis = RedisClientSingleton.get_client()
-        if redis and client_ip:
-            try:
-                if redis.exists(tenant_scoped_key(tenant_id, "throttle", client_ip)):
-                    rate_limit = max(1, rate_limit // 2)
-            except Exception as e:
-                logger.error("Throttle check Redis error: %s", e)
 
         if redis and (client_ip or api_key):
             path_key = path.split("?")[0].replace("/", "_")
+            throttle_key = tenant_scoped_key(tenant_id, "throttle", client_ip) if client_ip else None
 
             # Build one key per identity: IP and (if present) API key
             identities = []
@@ -102,13 +103,26 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 key = tenant_scoped_key(tenant_id, "rate:apikey", f"{api_key_hash}:{path_key}")
                 identities.append(("apikey", key))
 
-            for id_type, rate_key in identities:
+            for idx, (id_type, rate_key) in enumerate(identities):
                 log_key = rate_key.replace(":rate:", ":rate_log:")
                 try:
                     pipe = redis.pipeline()
+                    # Piggyback the throttle-check GET into the first identity's pipeline,
+                    # eliminating the separate EXISTS round-trip.
+                    if idx == 0 and throttle_key:
+                        pipe.get(throttle_key)
                     pipe.incr(rate_key)
                     pipe.expire(rate_key, rate_window, nx=True)
-                    current, _ = pipe.execute()
+                    _t = time.monotonic()
+                    results = pipe.execute()
+                    add_redis_ms(request, (time.monotonic() - _t) * 1000)
+
+                    if idx == 0 and throttle_key:
+                        throttle_val, current, _ = results
+                        if throttle_val:
+                            rate_limit = max(1, rate_limit // 2)
+                    else:
+                        current, _ = results
 
                     if current > rate_limit:
                         # SET NX EX: atomic log-dedup — True only on first breach per window
