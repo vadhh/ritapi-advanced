@@ -119,75 +119,112 @@ _expect "Wrong tenant token → block" "403" "$STATUS"
 echo -e "  ${DIM}Detail: $(python3 -c "import json,sys; d=json.load(open('/tmp/_demo_body.json')); print(d.get('detail',''))" 2>/dev/null)${NC}"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ACT 3 — INJECTION WAF: SQLi and XSS in URL
+# ACT 3 — INJECTION WAF  (each sub-type uses a distinct attacker IP)
 # ═══════════════════════════════════════════════════════════════════════════════
-_banner "ACT 3 — INJECTION WAF (SQL injection + XSS)"
+_banner "ACT 3 — INJECTION WAF"
 
-echo -e "  ${DIM}[3a] SQLi pattern in query string${NC}"
-_pause "Firing SQL injection..."
-# UNION SELECT NULL -- URL-encoded (%20 for spaces, no ambiguous + decoding)
-STATUS=$(_fire "$BASE_URL/probe?q=1%20UNION%20SELECT%20NULL--" \
+echo -e "  ${DIM}[3a] UNION-based SQL injection — attacker 10.0.attack.1${NC}"
+_pause "Firing SQLi..."
+STATUS=$(_fire "$BASE_URL/probe?id=1%20UNION%20SELECT%20NULL%2CNULL%2CNULL--" \
     -H "Authorization: Bearer $TOKEN_DEFAULT" \
-    -H "X-Target-ID: default")
-_expect "SQLi URL → block" "403" "$STATUS"
+    -H "X-Target-ID: default" \
+    -H "X-Forwarded-For: 10.0.attack.1")
+_expect "SQLi UNION SELECT → block" "403" "$STATUS"
+echo -e "  ${DIM}Reason: $(python3 -c "import json; d=json.load(open('/tmp/_demo_body.json')); print(d.get('detail',''))" 2>/dev/null)${NC}"
 
 _pause
 
-echo -e "  ${DIM}[3b] XSS payload in query string${NC}"
-_pause "Firing XSS injection..."
-# <script>alert(1)</script> URL-encoded
-STATUS=$(_fire "$BASE_URL/probe?q=%3Cscript%3Ealert%281%29%3C%2Fscript%3E" \
+echo -e "  ${DIM}[3b] Stored XSS — attacker 10.0.attack.2${NC}"
+_pause "Firing XSS..."
+STATUS=$(_fire "$BASE_URL/probe?name=%3Cscript%3Ealert%28document.cookie%29%3C%2Fscript%3E" \
     -H "Authorization: Bearer $TOKEN_DEFAULT" \
-    -H "X-Target-ID: default")
-_expect "XSS URL → block" "403" "$STATUS"
+    -H "X-Target-ID: default" \
+    -H "X-Forwarded-For: 10.0.attack.2")
+_expect "XSS → block" "403" "$STATUS"
+echo -e "  ${DIM}Reason: $(python3 -c "import json; d=json.load(open('/tmp/_demo_body.json')); print(d.get('detail',''))" 2>/dev/null)${NC}"
 
-echo -e "  ${DIM}[3c] Command injection in query string${NC}"
-_pause "Firing command injection..."
-# ; cat /etc/passwd URL-encoded
-STATUS=$(_fire "$BASE_URL/probe?q=%3B+cat+%2Fetc%2Fpasswd" \
+_pause
+
+echo -e "  ${DIM}[3c] Command injection — attacker 10.0.attack.3${NC}"
+_pause "Firing CMDi..."
+STATUS=$(_fire "$BASE_URL/probe?file=%2Fetc%2Fpasswd%3B%20id%3B%20whoami" \
     -H "Authorization: Bearer $TOKEN_DEFAULT" \
-    -H "X-Target-ID: default")
-_expect "CMDi URL → block" "403" "$STATUS"
+    -H "X-Target-ID: default" \
+    -H "X-Forwarded-For: 10.0.attack.3")
+_expect "CMDi → block" "403" "$STATUS"
+
+_pause
+
+echo -e "  ${DIM}[3d] Path traversal — attacker 10.0.attack.4${NC}"
+_pause "Firing path traversal..."
+STATUS=$(_fire "$BASE_URL/probe?path=..%2F..%2F..%2Fetc%2Fshadow" \
+    -H "Authorization: Bearer $TOKEN_DEFAULT" \
+    -H "X-Target-ID: default" \
+    -H "X-Forwarded-For: 10.0.attack.4")
+_expect "Path traversal → block" "403" "$STATUS"
+
+_pause
+
+echo -e "  ${DIM}[3e] POST body SQL injection — attacker 10.0.attack.5${NC}"
+_pause "Firing SQLi in POST body..."
+STATUS=$(_fire -X POST "$BASE_URL/probe" \
+    -H "Authorization: Bearer $TOKEN_DEFAULT" \
+    -H "X-Target-ID: default" \
+    -H "Content-Type: application/json" \
+    -H "X-Forwarded-For: 10.0.attack.5" \
+    -d '{"username":"admin'\''--","password":"anything"}')
+_expect "SQLi POST body → block" "403" "$STATUS"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ACT 4 — BOT DETECTION: scanner user-agent
+# ACT 4 — BOT DETECTION  (two different scanner signatures)
 # ═══════════════════════════════════════════════════════════════════════════════
-_banner "ACT 4 — BOT DETECTION (scanner user-agent)"
-echo -e "  ${DIM}User-Agent: sqlmap/1.7.8 — known scanner fingerprint${NC}"
+_banner "ACT 4 — BOT DETECTION (scanner fingerprints)"
 
-# Fire a few requests so bot detection accumulates enough signal to block.
-# The default policy action for bot detections is 'block' after threshold.
-_pause "Firing bot requests (3 needed to accumulate risk score)..."
-for i in 1 2 3; do
+echo -e "  ${DIM}[4a] sqlmap — attacker 10.0.bot.1${NC}"
+_pause "Firing sqlmap UA (accumulating risk)..."
+for i in 1 2 3 4; do
     S=$(_fire "$BASE_URL/probe" \
         -H "Authorization: Bearer $TOKEN_DEFAULT" \
         -H "X-Target-ID: default" \
-        -H "User-Agent: sqlmap/1.7.8" \
-        -H "X-Forwarded-For: 10.99.demo.bot.1")
-    echo -e "    ${DIM}Request $i → HTTP $S${NC}"
-    sleep 0.3
+        -H "User-Agent: sqlmap/1.7.8#stable" \
+        -H "X-Forwarded-For: 10.0.bot.1")
+    printf "    ${DIM}%d → HTTP %s${NC}\n" "$i" "$S"
+    sleep 0.2
 done
+_expect "sqlmap UA → block" "403" "$S"
 
-# Final request — should be blocked at this point
-STATUS=$(_fire "$BASE_URL/probe" \
-    -H "Authorization: Bearer $TOKEN_DEFAULT" \
-    -H "X-Target-ID: default" \
-    -H "User-Agent: sqlmap/1.7.8" \
-    -H "X-Forwarded-For: 10.99.demo.bot.1")
-_expect "Scanner UA → block" "403" "$STATUS"
+_pause
+
+echo -e "  ${DIM}[4b] Nikto scanner — attacker 10.0.bot.2${NC}"
+_pause "Firing Nikto UA..."
+for i in 1 2 3 4; do
+    S=$(_fire "$BASE_URL/probe" \
+        -H "Authorization: Bearer $TOKEN_DEFAULT" \
+        -H "X-Target-ID: default" \
+        -H "User-Agent: Nikto/2.1.6" \
+        -H "X-Forwarded-For: 10.0.bot.2")
+    printf "    ${DIM}%d → HTTP %s${NC}\n" "$i" "$S"
+    sleep 0.2
+done
+_expect "Nikto UA → block" "403" "$S"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ACT 5 — RATE LIMITING: burst 10 req/30s limit
-# Uses /dashboard (no auth required, default policy → block on breach)
+# ACT 5 — RATE LIMITING  (burst from a dedicated attacker IP)
+# Uses /dashboard (no auth, default policy → block on breach)
 # ═══════════════════════════════════════════════════════════════════════════════
 _banner "ACT 5 — RATE LIMITING (${RATE_LIMIT:-50} req / 60s)"
-echo -e "  ${DIM}Firing 55 rapid requests from the same IP — limit is 50${NC}"
+echo -e "  ${DIM}Firing 55 rapid requests from 10.0.flood.1 — limit is 50${NC}"
 
-LAST_STATUS=""
+LAST_STATUS=""; SHOWN_429=0
 for i in $(seq 1 55); do
     LAST_STATUS=$(_fire "$BASE_URL/dashboard" \
-        -H "X-Forwarded-For: 10.99.demo.rate.1")
-    printf "    ${DIM}%2d/55 → HTTP %s${NC}\n" "$i" "$LAST_STATUS"
+        -H "X-Forwarded-For: 10.0.flood.1")
+    if [ "$LAST_STATUS" = "429" ] && [ "$SHOWN_429" -eq 0 ]; then
+        printf "    ${DIM}%2d/55 → HTTP %s  ◄ BLOCKED${NC}\n" "$i" "$LAST_STATUS"
+        SHOWN_429=1
+    elif [ "$LAST_STATUS" != "429" ]; then
+        printf "    ${DIM}%2d/55 → HTTP %s${NC}\n" "$i" "$LAST_STATUS"
+    fi
 done
 
 _expect "Burst limit → 429" "429" "$LAST_STATUS"

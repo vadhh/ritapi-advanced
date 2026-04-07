@@ -122,9 +122,12 @@ def _redis_stats() -> dict[str, Any]:
 
 def _aggregate(events: list[dict]) -> dict[str, Any]:
     actions = Counter(e.get("action", "unknown") for e in events)
-    detection_types = Counter(e.get("detection_type", "none") for e in events)
+    # trigger_type is the canonical detection field in the SIEM schema
+    detection_types = Counter(
+        e.get("trigger_type", "none") for e in events if e.get("trigger_type", "none") != "none"
+    )
     top_ips = (
-        Counter(e.get("client_ip", "") for e in events if e.get("action") == "block")
+        Counter(e.get("source_ip", "") for e in events if e.get("action") == "block")
         .most_common(5)
     )
 

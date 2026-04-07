@@ -111,14 +111,15 @@
       <table class="w-full text-xs">
         <thead>
           <tr class="text-slate-500 border-b border-border">
-            <th class="px-4 py-2 text-left font-normal">Timestamp</th>
-            <th class="px-4 py-2 text-left font-normal">IP</th>
-            <th class="px-4 py-2 text-left font-normal">Method</th>
+            <th class="px-4 py-2 text-left font-normal">Time</th>
+            <th class="px-4 py-2 text-left font-normal">Source IP</th>
+            <th class="px-4 py-2 text-left font-normal">Tenant</th>
+            <th class="px-4 py-2 text-left font-normal">Mth</th>
             <th class="px-4 py-2 text-left font-normal">Path</th>
             <th class="px-4 py-2 text-left font-normal">Action</th>
             <th class="px-4 py-2 text-left font-normal">Detection</th>
             <th class="px-4 py-2 text-left font-normal">Score</th>
-            <th class="px-4 py-2 text-left font-normal">Reasons</th>
+            <th class="px-4 py-2 text-left font-normal">Reason</th>
           </tr>
         </thead>
         <tbody id="events-tbody" class="divide-y divide-border"></tbody>
@@ -143,12 +144,13 @@
   }
 
   function detectionBadge(type) {
+    if (!type || type === "none") return `<span class="badge bg-slate-800 text-slate-500">–</span>`;
     const col = type.startsWith("bot")          ? "bg-purple-900/60 text-purple-300"
               : type.startsWith("yara")         ? "bg-pink-900/60 text-pink-300"
               : type === "rate_limit"            ? "bg-orange-900/60 text-orange-300"
-              : ["xss","sqli","cmdi","ldap",
-                 "path_traversal","scanner_ua"].includes(type)
-                                                ? "bg-red-900/60 text-red-300"
+              : type === "auth_failure"          ? "bg-yellow-900/60 text-yellow-300"
+              : type === "injection"             ? "bg-red-900/60 text-red-300"
+              : type.startsWith("exfil")         ? "bg-cyan-900/60 text-cyan-300"
               : "bg-slate-800 text-slate-400";
     return `<span class="badge ${col}">${type}</span>`;
   }
@@ -174,7 +176,19 @@
     return "text-slate-400";
   }
 
+  // ---- Sanitisation (all dynamic field values go through esc()) ----
+  function esc(s) {
+    return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;")
+                          .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
   // ---- Render ----
+  function maxScore(e) {
+    const dets = e.detections;
+    if (Array.isArray(dets) && dets.length) return Math.max(...dets.map(d => d.score ?? 0));
+    return 0;
+  }
+
   function renderEvents(events) {
     const tbody = document.getElementById("events-tbody");
     const empty = document.getElementById("events-empty");
@@ -186,18 +200,29 @@
     }
     empty.classList.add("hidden");
 
-    tbody.innerHTML = events.map(e => `
+    tbody.innerHTML = events.map(e => {
+      const ip      = esc(e.source_ip  ?? "–");
+      const tenant  = esc(e.tenant_id  ?? "–");
+      const path    = esc(e.route      ?? "–");
+      const detType = e.trigger_type   ?? "none";
+      const reason  = esc(e.reason     ?? "–");
+      const score   = maxScore(e);
+      // For injection events show the sub-type (sqli / xss / cmdi / …) from the first detection reason
+      const subType = (detType === "injection" && e.detections?.length)
+                      ? esc(e.detections[0].reason?.split(":")[0]?.trim() ?? "") : "";
+      return `
       <tr class="hover:bg-white/[.02] transition">
         <td class="px-4 py-2 text-slate-500 whitespace-nowrap">${fmtTime(e.timestamp)}</td>
-        <td class="px-4 py-2 font-mono text-slate-300">${e.client_ip ?? "–"}</td>
-        <td class="px-4 py-2">${methodBadge(e.method ?? "")}</td>
-        <td class="px-4 py-2 text-slate-400 max-w-[200px] truncate" title="${e.path ?? ""}">${e.path ?? "–"}</td>
-        <td class="px-4 py-2">${actionBadge(e.action ?? "")}</td>
-        <td class="px-4 py-2">${detectionBadge(e.detection_type ?? "none")}</td>
-        <td class="px-4 py-2 ${scoreColour(e.score ?? 0)}">${(e.score ?? 0).toFixed(2)}</td>
-        <td class="px-4 py-2 text-slate-500 max-w-[260px] truncate" title="${e.reasons ?? ""}">${e.reasons ?? "–"}</td>
-      </tr>
-    `).join("");
+        <td class="px-4 py-2 font-mono text-slate-300 whitespace-nowrap">${ip}</td>
+        <td class="px-4 py-2 text-slate-400 whitespace-nowrap">${tenant}</td>
+        <td class="px-4 py-2">${methodBadge(esc(e.method ?? ""))}</td>
+        <td class="px-4 py-2 text-slate-400 max-w-[180px] truncate" title="${path}">${path}</td>
+        <td class="px-4 py-2">${actionBadge(detType === "none" ? (e.action ?? "") : e.action ?? "")}</td>
+        <td class="px-4 py-2 whitespace-nowrap">${detectionBadge(detType)}${subType ? ` <span class="text-slate-500">${subType}</span>` : ""}</td>
+        <td class="px-4 py-2 whitespace-nowrap ${scoreColour(score)}">${score > 0 ? score.toFixed(2) : "–"}</td>
+        <td class="px-4 py-2 text-slate-500 max-w-[320px] truncate" title="${reason}">${reason}</td>
+      </tr>`;
+    }).join("");
   }
 
   function renderDetectionBars(byType) {
@@ -231,7 +256,7 @@
     const text   = document.getElementById("filter-input").value.toLowerCase();
     const action = document.getElementById("filter-action").value;
     const filtered = allEvents.filter(e => {
-      const matchText = !text || [e.client_ip, e.path, e.detection_type, e.reasons]
+      const matchText = !text || [e.source_ip, e.route, e.trigger_type, e.reason, e.tenant_id]
         .some(f => (f ?? "").toLowerCase().includes(text));
       const matchAction = !action || e.action === action;
       return matchText && matchAction;
