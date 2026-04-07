@@ -18,6 +18,7 @@ Canonical field list — see siem_export.build_siem_event() docstring.
 from __future__ import annotations
 
 import json
+import os
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -25,6 +26,14 @@ from typing import Any
 from fastapi import Request
 
 from app.security.siem_export import build_siem_event
+
+_LOG_PATH: str | None = os.getenv("LOG_PATH")
+# Only write to file when LOG_PATH is a real path (not a special stream)
+_LOG_FILE: str | None = (
+    _LOG_PATH
+    if _LOG_PATH and _LOG_PATH not in ("/dev/stdout", "/dev/stderr", "-", "")
+    else None
+)
 
 
 def _get_source_ip(request: Request) -> str:
@@ -123,6 +132,13 @@ def log_security_event(
         if isinstance(raw_perf, dict) and raw_perf:
             event["perf"] = {k: v for k, v in raw_perf.items() if isinstance(v, (int, float))}
 
-        print(json.dumps(event, ensure_ascii=False))
+        line = json.dumps(event, ensure_ascii=False)
+        print(line)
+        if _LOG_FILE:
+            try:
+                with open(_LOG_FILE, "a", encoding="utf-8") as fh:
+                    fh.write(line + "\n")
+            except Exception:  # noqa: S110
+                pass
     except Exception:  # noqa: S110
         pass

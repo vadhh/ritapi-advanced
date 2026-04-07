@@ -180,14 +180,14 @@ _expect "Scanner UA → block" "403" "$STATUS"
 # ACT 5 — RATE LIMITING: burst 10 req/30s limit
 # Uses /dashboard (no auth required, default policy → block on breach)
 # ═══════════════════════════════════════════════════════════════════════════════
-_banner "ACT 5 — RATE LIMITING (${RATE_LIMIT:-10} req / 30s)"
-echo -e "  ${DIM}Firing 12 rapid requests from the same IP — limit is 10${NC}"
+_banner "ACT 5 — RATE LIMITING (${RATE_LIMIT:-50} req / 60s)"
+echo -e "  ${DIM}Firing 55 rapid requests from the same IP — limit is 50${NC}"
 
 LAST_STATUS=""
-for i in $(seq 1 12); do
+for i in $(seq 1 55); do
     LAST_STATUS=$(_fire "$BASE_URL/dashboard" \
         -H "X-Forwarded-For: 10.99.demo.rate.1")
-    printf "    ${DIM}%2d/12 → HTTP %s${NC}\n" "$i" "$LAST_STATUS"
+    printf "    ${DIM}%2d/55 → HTTP %s${NC}\n" "$i" "$LAST_STATUS"
 done
 
 _expect "Burst limit → 429" "429" "$LAST_STATUS"
