@@ -31,7 +31,7 @@ _banner() {
 }
 
 _expect() {
-    local label="$1" expected="$2" actual="$3" detail="$4"
+    local label="$1" expected="$2" actual="$3" detail="${4:-}"
     if [ "$actual" = "$expected" ]; then
         echo -e "  ${GREEN}✓ PASS${NC}  ${BOLD}$label${NC} → HTTP $actual"
         PASS=$((PASS+1))
@@ -75,28 +75,10 @@ if [ -z "$TOKEN_ACME" ] || [ -z "$TOKEN_DEFAULT" ]; then
 fi
 echo -e "  ${GREEN}✓${NC} Tokens issued: ${BOLD}acme${NC}, ${BOLD}default${NC}"
 
-# Generate a legacy (no-tid) token inside the container
-TOKEN_LEGACY=$(docker exec "$CONTAINER_APP" python3 - <<'PYEOF' 2>/dev/null || echo "")
-import os, sys
-sys.path.insert(0, '/app')
-from jose import jwt as _jwt
-from datetime import datetime, timezone, timedelta
-secret = os.environ.get('SECRET_KEY', '')
-algo   = os.environ.get('JWT_ALGORITHM', 'HS256')
-payload = {
-    'sub':  'legacy-user',
-    'role': 'VIEWER',
-    # deliberately omit 'tid' — this is the unbound credential case
-    'exp':  datetime.now(timezone.utc) + timedelta(hours=24),
-}
-print(_jwt.encode(payload, secret, algorithm=algo))
-PYEOF
-
-if [ -z "$TOKEN_LEGACY" ]; then
-    echo -e "  ${YELLOW}⚠${NC}  Legacy token generation skipped (docker exec unavailable)"
-    TOKEN_LEGACY="invalid"
-fi
-echo -e "  ${GREEN}✓${NC} Legacy token (no tid claim) generated"
+# Issue a token bound to 'corp' tenant — used with X-Target-ID: acme to show mismatch block.
+# (Same enforcement path as a no-tid legacy token: credential tenant != claimed tenant → 403)
+TOKEN_WRONG_TENANT=$(_issue_token "demo-corp" "VIEWER" "corp")
+echo -e "  ${GREEN}✓${NC} Mismatched tenant token issued (corp, will be sent claiming acme)"
 
 sleep 1
 
@@ -128,12 +110,12 @@ echo -e "  ${DIM}Detail: $(python3 -c "import json,sys; d=json.load(open('/tmp/_
 
 _pause
 
-echo -e "  ${DIM}[2b] Legacy token with no tid claim — should always block${NC}"
-_pause "Firing unbound credential..."
+echo -e "  ${DIM}[2b] Token bound to 'corp', header claims 'acme' — second mismatch variant${NC}"
+_pause "Firing second tenant mismatch..."
 STATUS=$(_fire "$BASE_URL/probe" \
-    -H "Authorization: Bearer $TOKEN_LEGACY" \
+    -H "Authorization: Bearer $TOKEN_WRONG_TENANT" \
     -H "X-Target-ID: acme")
-_expect "Unbound credential → block" "403" "$STATUS"
+_expect "Wrong tenant token → block" "403" "$STATUS"
 echo -e "  ${DIM}Detail: $(python3 -c "import json,sys; d=json.load(open('/tmp/_demo_body.json')); print(d.get('detail',''))" 2>/dev/null)${NC}"
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -143,8 +125,8 @@ _banner "ACT 3 — INJECTION WAF (SQL injection + XSS)"
 
 echo -e "  ${DIM}[3a] SQLi pattern in query string${NC}"
 _pause "Firing SQL injection..."
-# ' OR '1'='1 URL-encoded
-STATUS=$(_fire "$BASE_URL/probe?q=%27+OR+%271%27%3D%271" \
+# UNION SELECT NULL -- URL-encoded (%20 for spaces, no ambiguous + decoding)
+STATUS=$(_fire "$BASE_URL/probe?q=1%20UNION%20SELECT%20NULL--" \
     -H "Authorization: Bearer $TOKEN_DEFAULT" \
     -H "X-Target-ID: default")
 _expect "SQLi URL → block" "403" "$STATUS"
