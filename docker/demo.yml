@@ -1,0 +1,39 @@
+# docker/demo.yml — RitAPI Advanced live demo stack
+#
+# Starts the app + Redis with demo-safe credentials and low rate limits
+# so every protection layer triggers visibly during the demo.
+#
+# Usage:
+#   docker compose -f docker/demo.yml up --build
+#   # In a second terminal:
+#   ./scripts/demo_attack.sh
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: ritapi-demo-redis
+    command: redis-server --save "" --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: ritapi-demo-app
+    env_file: ../.env.demo
+    ports:
+      - "8001:8001"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8001/healthz')"]
+      interval: 5s
+      timeout: 3s
+      start_period: 15s
+      retries: 10
