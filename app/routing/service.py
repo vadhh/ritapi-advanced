@@ -29,6 +29,8 @@ class Route:
 
 _routes: list[Route] = []
 _loaded: bool = False
+# Memoised (path, method) → Route | None.  Cleared on reload_routes().
+_route_cache: dict[tuple[str, str], "Route | None"] = {}
 
 
 def _load_routes() -> None:
@@ -62,26 +64,35 @@ def _load_routes() -> None:
         _loaded = True
 
 
-def resolve_route(path: str, method: str) -> Route | None:
+def resolve_route(path: str, method: str) -> "Route | None":
     """
     Resolve a request path + method to a Route.
 
     Returns the first matching route (longest prefix wins) or None.
+    Result is memoised per (path, method) pair; cache is cleared on reload_routes().
     """
     if not _loaded:
         _load_routes()
 
     method = method.upper()
+    key = (path, method)
+    if key in _route_cache:
+        return _route_cache[key]
+
+    result = None
     for route in _routes:
         if path.startswith(route.path_prefix) and method in route.methods:
-            return route
-    return None
+            result = route
+            break
+    _route_cache[key] = result
+    return result
 
 
 def reload_routes() -> None:
     """Force reload of routing config (e.g. on SIGHUP)."""
     global _loaded
     _loaded = False
+    _route_cache.clear()
     _load_routes()
 
 

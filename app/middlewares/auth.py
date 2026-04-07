@@ -14,9 +14,20 @@ Bypass paths (no auth regardless of policy):
   /healthz        — liveness probe
   /metrics        — Prometheus scrape
   /dashboard*     — dashboard UI (add auth guard separately if needed)
+
+Tenant verification (always enforced on non-bypass routes):
+  Every valid credential MUST carry a tenant claim ("tid" for JWT,
+  "tenant_id" for API key metadata).  The embedded value is compared
+  against request.state.claimed_tenant_id set by TenantContextMiddleware.
+  On success:
+    request.state.tenant_id      = credential_tenant  (verified)
+    request.state.tenant_verified = True
+  On failure (missing claim or mismatch) an auth_failure detection is
+  appended and the request is forwarded to DecisionEngineMiddleware for
+  the 403 response.
 """
 import logging
-import os
+import time
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -25,12 +36,9 @@ from app.auth.api_key_handler import validate_api_key
 from app.auth.jwt_handler import get_token_from_request, verify_token
 from app.middlewares.detection_schema import append_detection
 from app.utils.metrics import auth_failures
+from app.utils.perf import add_redis_ms, get_perf
 
 logger = logging.getLogger(__name__)
-
-# When True, credentials without a tenant claim ("tid" / "tenant_id") are
-# rejected. Default False preserves backward compatibility with legacy tokens.
-_STRICT_TENANT_MODE: bool = os.getenv("TENANT_STRICT_MODE", "").lower() in ("1", "true", "yes")
 
 # ---------------------------------------------------------------------------
 # Bypass configuration
@@ -81,6 +89,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         claims = None
         auth_method = "missing"
+        _t_auth = time.monotonic()
 
         # 1. Try JWT Bearer
         if accept_jwt:
@@ -96,13 +105,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
             raw_key = request.headers.get("x-api-key", "").strip()
             if raw_key:
                 auth_method = "api_key"
+                _t_redis = time.monotonic()
                 claims = validate_api_key(raw_key)
+                add_redis_ms(request, (time.monotonic() - _t_redis) * 1000)
                 if claims is None:
                     # nosemgrep: python-logger-credential-disclosure — logs IP/path, not the key
                     logger.debug("Auth: invalid API key from %s on %s", ip, path)
 
         # 3. Reject if no valid credential — write detection and route through DecisionEngine
         if claims is None:
+            get_perf(request)["auth_ms"] = round((time.monotonic() - _t_auth) * 1000, 3)
             logger.warning(
                 "Auth: rejected %s %s from %s (method=%s)", request.method, path, ip, auth_method
             )
@@ -118,12 +130,34 @@ class AuthMiddleware(BaseHTTPMiddleware):
             )
             return await call_next(request)
 
-        # 4. Tenant binding check — only when the credential carries a tenant claim.
-        # JWT embeds it as "tid"; API key metadata uses "tenant_id".
-        # Legacy credentials without either field are allowed through (backward-compat).
-        claimed_tenant = getattr(request.state, "tenant_id", "default")
+        # 4. Tenant verification gate — always enforced.
+        # TenantContextMiddleware wrote the client's claimed tenant to
+        # request.state.claimed_tenant_id.  The credential must carry a
+        # matching tenant claim; credentials without any tenant claim are
+        # rejected unconditionally (no legacy pass-through).
+        claimed_tenant = getattr(request.state, "claimed_tenant_id", "default")
         credential_tenant = claims.get("tid") or claims.get("tenant_id")
-        if credential_tenant and credential_tenant != claimed_tenant:
+
+        if not credential_tenant:
+            get_perf(request)["auth_ms"] = round((time.monotonic() - _t_auth) * 1000, 3)
+            logger.warning(
+                "Auth: rejecting unbound credential from %s on %s — no tenant claim",
+                ip, path,
+            )
+            auth_failures.labels(method="tenant_unbound").inc()
+            append_detection(
+                request,
+                detection_type="auth_failure",
+                score=1.0,
+                reason="Credential carries no tenant claim (unbound credential rejected)",
+                status_code=403,
+                source="auth",
+                metadata={"auth_method": auth_method, "path": path},
+            )
+            return await call_next(request)
+
+        if credential_tenant != claimed_tenant:
+            get_perf(request)["auth_ms"] = round((time.monotonic() - _t_auth) * 1000, 3)
             logger.warning(
                 "Auth: tenant mismatch from %s — credential_tenant=%r claimed=%r",
                 ip, credential_tenant, claimed_tenant,
@@ -147,6 +181,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
             )
             return await call_next(request)
 
-        # Attach claims for RBAC and route handlers
+        # Verified: bind the confirmed tenant and attach claims for RBAC and route handlers
+        get_perf(request)["auth_ms"] = round((time.monotonic() - _t_auth) * 1000, 3)
+        request.state.tenant_id = credential_tenant
+        request.state.tenant_verified = True
         request.state.claims = claims
         return await call_next(request)

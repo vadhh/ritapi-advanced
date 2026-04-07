@@ -40,7 +40,8 @@ def _run(coro):
 
 def _make_state(**kwargs):
     state = MagicMock()
-    state.tenant_id = kwargs.get("tenant_id", "default")
+    claimed = kwargs.get("claimed_tenant_id", kwargs.get("tenant_id", "default"))
+    state.claimed_tenant_id = claimed
     state.request_id = kwargs.get("request_id", "proof-req-0000")
     state.started_at = None
     state.block = False
@@ -81,7 +82,7 @@ class TestTenantIdSanitization:
         assert _TENANT_ID_RE.match("a" * 64)   # exactly 64 — accepted
 
     def test_middleware_defaults_on_invalid_header(self):
-        """TenantContextMiddleware must set tenant_id='default' for invalid values."""
+        """TenantContextMiddleware must set claimed_tenant_id='default' for invalid values."""
         invalid_headers = [
             "evil:tenant",       # colon injection
             "tenant/../../etc",  # path traversal attempt
@@ -99,9 +100,9 @@ class TestTenantIdSanitization:
             mw = TenantContextMiddleware(app=MagicMock())
             _run(mw.dispatch(req, fake_next))
 
-            assert req.state.tenant_id == "default", (
+            assert req.state.claimed_tenant_id == "default", (
                 f"Header {header_value!r} should fall back to 'default', "
-                f"got {req.state.tenant_id!r}"
+                f"got {req.state.claimed_tenant_id!r}"
             )
 
     def test_valid_header_accepted(self):
@@ -113,7 +114,7 @@ class TestTenantIdSanitization:
 
         mw = TenantContextMiddleware(app=MagicMock())
         _run(mw.dispatch(req, fake_next))
-        assert req.state.tenant_id == "acme-corp"
+        assert req.state.claimed_tenant_id == "acme-corp"
 
 
 # ---------------------------------------------------------------------------
@@ -268,16 +269,22 @@ class TestAuthTenantMismatch:
         assert auth_failures[0]["metadata"]["credential_tenant"] == "tenant-a"
         assert auth_failures[0]["metadata"]["claimed_tenant"] == "tenant-b"
 
-    def test_legacy_token_without_tid_allowed(self):
-        """Tokens without 'tid' claim (issued before patch) must still authenticate."""
+    def test_legacy_token_without_tid_blocked(self):
+        """Tokens without 'tid' claim are now unconditionally rejected (strict tenant mode)."""
         req, _, _ = self._make_request(tenant_id="tenant-a")
         ensure_detections_container(req)
-        # No "tid" claim — legacy token
+        # No "tid" claim — unbound credential
         self._dispatch_auth(req, token_claims={"sub": "legacy-svc", "role": "VIEWER"})
 
-        auth_failures = [d for d in req.state.detections if d.get("type") == "auth_failure"]
-        assert len(auth_failures) == 0, (
-            "Legacy tokens without 'tid' claim must not trigger tenant mismatch"
+        auth_failure_detections = [
+            d for d in req.state.detections if d.get("type") == "auth_failure"
+        ]
+        assert len(auth_failure_detections) == 1, (
+            "Unbound credentials (no tenant claim) must produce exactly one auth_failure detection"
+        )
+        assert "no tenant claim" in auth_failure_detections[0]["reason"].lower() or \
+               "unbound" in auth_failure_detections[0]["reason"].lower(), (
+            f"Unexpected reason: {auth_failure_detections[0]['reason']!r}"
         )
 
 

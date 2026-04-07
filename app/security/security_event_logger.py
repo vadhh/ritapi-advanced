@@ -115,6 +115,14 @@ def log_security_event(
         # Rich extension for non-SIEM consumers — SIEM tools should ignore this key
         event["detections"] = detections
 
+        # Per-stage performance breakdown (ms).  Written by individual middlewares
+        # into request.state.perf; absent keys mean the stage was bypassed or not yet
+        # instrumented.  total_ms is the end-to-end wall time (written by RequestIDMiddleware
+        # only on response egress, so it may be absent for very early blocks).
+        raw_perf = getattr(request.state, "perf", None)
+        if isinstance(raw_perf, dict) and raw_perf:
+            event["perf"] = {k: v for k, v in raw_perf.items() if isinstance(v, (int, float))}
+
         print(json.dumps(event, ensure_ascii=False))
     except Exception:  # noqa: S110
         pass

@@ -10,12 +10,14 @@ Changes from source:
 """
 import logging
 import os
+import time as _time
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.middlewares.detection_schema import append_detection
 from app.utils.metrics import bot_blocks, bot_signals, requests_total, threat_score
+from app.utils.perf import add_redis_ms, get_perf
 from app.utils.redis_client import RedisClientSingleton
 from app.utils.tenant_key import tenant_scoped_key
 
@@ -225,13 +227,17 @@ class BotDetectionMiddleware(BaseHTTPMiddleware):
             payload_size = 0
 
         # --- Pre-request block: if prior cumulative risk >= threshold, block immediately ---
+        _t_bot_pre = _time.monotonic()
         redis_pre = RedisClientSingleton.get_client()
         if redis_pre is not None:
             try:
+                _t_r = _time.monotonic()
                 existing_risk = int(
                     redis_pre.get(tenant_scoped_key(tenant_id, "bot:risk", ip)) or 0
                 )
+                add_redis_ms(request, (_time.monotonic() - _t_r) * 1000)
                 if existing_risk >= BLOCK_THRESHOLD:
+                    get_perf(request)["bot_ms"] = round((_time.monotonic() - _t_bot_pre) * 1000, 3)
                     logger.warning(
                         "Bot pre-block %s on %s — cumulative risk %d >= %d",
                         ip, path, existing_risk, BLOCK_THRESHOLD,
@@ -248,20 +254,25 @@ class BotDetectionMiddleware(BaseHTTPMiddleware):
                     return await call_next(request)
             except Exception as e:
                 logger.debug("Bot pre-request Redis check failed (fail-open): %s", e)
+        _t_bot_pre_elapsed = (_time.monotonic() - _t_bot_pre) * 1000
 
         # Let the request proceed to get the response status code
         response = await call_next(request)
         status_code = response.status_code
 
+        _t_bot_post = _time.monotonic()
         hits = _detect(redis, ip, method, path, ua, payload_size, status_code,
                        tenant_id=tenant_id)
 
         if not hits:
+            get_perf(request)["bot_ms"] = round(_t_bot_pre_elapsed + (_time.monotonic() - _t_bot_post) * 1000, 3)
             return response
 
         hits.sort(key=lambda x: x[1], reverse=True)
         top_name, top_score = hits[0]
+        _t_r = _time.monotonic()
         cumulative = _accumulate_risk(redis, ip, top_score, tenant_id=tenant_id)
+        add_redis_ms(request, (_time.monotonic() - _t_r) * 1000)
         all_names = ", ".join(h[0] for h in hits)
 
         logger.warning(
@@ -286,6 +297,10 @@ class BotDetectionMiddleware(BaseHTTPMiddleware):
                 "cumulative_risk": cumulative,
                 "action": action,
             },
+        )
+
+        get_perf(request)["bot_ms"] = round(
+            _t_bot_pre_elapsed + (_time.monotonic() - _t_bot_post) * 1000, 3
         )
 
         for name, _ in hits:

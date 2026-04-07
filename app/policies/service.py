@@ -82,6 +82,10 @@ class Policy:
 
 _policies: dict[str, Policy] = {}
 _loaded: bool = False
+# Memoised (policy_name, tenant_id) → Policy | None.
+# None means "no tenant-specific file found; use global".
+# Cleared on reload_policies() so hot-reload still works.
+_tenant_policy_cache: dict[tuple[str | None, str], "Policy | None"] = {}
 
 # Default policy used when no policy is assigned to a route
 DEFAULT_POLICY = Policy(
@@ -197,9 +201,12 @@ def get_policy(name: str | None, tenant_id: str = "default") -> "Policy":
     if not _loaded:
         _load_policies()
 
-    # 1. Try tenant-specific override first
+    # 1. Try tenant-specific override first (result is cached after first lookup)
     if tenant_id and tenant_id != "default":
-        tenant_policy = _load_tenant_policy(name, tenant_id)
+        cache_key = (name, tenant_id)
+        if cache_key not in _tenant_policy_cache:
+            _tenant_policy_cache[cache_key] = _load_tenant_policy(name, tenant_id)
+        tenant_policy = _tenant_policy_cache[cache_key]
         if tenant_policy is not None:
             return tenant_policy
 
@@ -213,6 +220,7 @@ def reload_policies() -> None:
     """Force reload of all policies (e.g. on SIGHUP)."""
     global _loaded
     _loaded = False
+    _tenant_policy_cache.clear()
     _load_policies()
 
 
