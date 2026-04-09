@@ -18,12 +18,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import Request
-from starlette.responses import JSONResponse as StarletteJSONResponse
 from starlette.responses import Response
 
 from app.middlewares.decision_engine import DecisionEngineMiddleware
 from app.policies.service import DEFAULT_POLICY, DecisionActions
-
 
 # ---------------------------------------------------------------------------
 # Structural: policy maps all HardGate types to "block"

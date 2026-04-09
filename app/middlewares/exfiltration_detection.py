@@ -113,7 +113,9 @@ class ExfiltrationDetectionMiddleware(BaseHTTPMiddleware):
                     pre_reason = "sequential_crawl"
 
                 if pre_reason is not None:
-                    get_perf(request)["exfil_ms"] = round((_time.monotonic() - _t_exfil_pre) * 1000, 3)
+                    get_perf(request)["exfil_ms"] = round(
+                        (_time.monotonic() - _t_exfil_pre) * 1000, 3
+                    )
                     logger.warning(
                         "Exfiltration pre-block [%s] from %s on %s",
                         pre_reason, ip, path,

@@ -7,10 +7,9 @@ Cache invalidation tests.
 4. After reload, changed YAML is reflected immediately.
 """
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Route cache TTL
@@ -24,9 +23,6 @@ def test_route_cache_respects_ttl():
     try:
         svc.CACHE_TTL = 0  # zero TTL — every lookup is a miss
         svc._route_cache.clear()
-
-        resolve_calls: list[int] = []
-        original_resolve = svc._load_routes
 
         # Patch resolve to count actual disk lookups
         svc._loaded = True
@@ -59,7 +55,7 @@ def test_route_cache_hit_within_ttl():
         svc._routes = []
 
         # Seed the cache manually with a future timestamp
-        from app.routing.service import _MISSING, Route
+        from app.routing.service import Route
         fake_route = Route(
             name="cached-route",
             path_prefix="/api/cached",

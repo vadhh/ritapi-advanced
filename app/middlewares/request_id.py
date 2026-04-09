@@ -13,9 +13,10 @@ import sys
 import time
 import uuid
 
-from app.utils.perf import get_perf
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+
+from app.utils.perf import get_perf
 
 _PERF_WARN_MS: float = float(os.getenv("PERF_WARN_THRESHOLD_MS", "50"))
 

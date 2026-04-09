@@ -14,17 +14,14 @@ import asyncio
 import inspect
 from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi import Request
 from starlette.responses import JSONResponse as StarletteJSONResponse
 from starlette.responses import Response
 
 from app.middlewares.decision_engine import DecisionEngineMiddleware
-from app.middlewares.detection_schema import append_detection, ensure_detections_container
 from app.middlewares.hard_gate import HardGateMiddleware
 from app.middlewares.injection_detection import InjectionDetectionMiddleware
 from app.policies.service import DEFAULT_POLICY
-
 
 # ---------------------------------------------------------------------------
 # Structural / static assertions

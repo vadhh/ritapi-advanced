@@ -66,6 +66,18 @@ class DecisionEngineMiddleware(BaseHTTPMiddleware):
         # Outer middlewares execute their pre-request code and write to
         # request.state.detections BEFORE call_next reaches us here.
         # We process them now so the route handler never runs for blocked requests.
+
+        # SAFETY GUARD — sanity assertion: detections attribute must always be present.
+        # Missing means a middleware was added/reordered without initialising the state
+        # slot (e.g. in app/main.py add_middleware order was changed). Log loudly so
+        # tests and alerts catch it immediately; do NOT silently continue.
+        if not hasattr(request.state, "detections"):
+            logger.error(
+                "SAFETY[DETECTIONS_MISSING] request.state.detections absent on %s %s from %s"
+                " — middleware init order may be broken; defaulting to empty list",
+                request.method, request.url.path, ip,
+            )
+
         raw_detections = getattr(request.state, "detections", [])
         detections = [
             normalize_detection(d) for d in raw_detections if isinstance(d, dict)
@@ -88,12 +100,21 @@ class DecisionEngineMiddleware(BaseHTTPMiddleware):
             action = policy.decision_actions.get_action(det_type)
 
             if action == "block":
+                # SAFETY GUARD — fail-safe block trace: emitted before _block_response so
+                # the decision is always recorded even if the response path raises later.
+                logger.warning(
+                    "SAFETY[BLOCK_DECISION] action=block det_type=%s score=%.2f"
+                    " source=%s path=%s %s from %s reason=%r",
+                    det_type, score, source, request.method, request.url.path, ip, reason,
+                )
                 get_perf(request)["decision_ms"] = round((_time.monotonic() - _t_de) * 1000, 3)
                 return self._block_response(
                     request, ip, reason, det_type, score, status_code, source
                 )
             elif action == "throttle":
-                throttle_response = self._apply_throttle(request, ip, reason, det_type, score, source)
+                throttle_response = self._apply_throttle(
+                    request, ip, reason, det_type, score, source
+                )
                 if throttle_response is not None:
                     get_perf(request)["decision_ms"] = round((_time.monotonic() - _t_de) * 1000, 3)
                     return throttle_response

@@ -10,8 +10,6 @@ Three cases using the full middleware stack via TestClient:
 Run with:
     pytest tests/test_strict_tenant_runtime_proof.py -v -s
 """
-import os
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -41,8 +39,8 @@ def test_case1_valid_tenant_allowed(tc, capsys):
     captured = capsys.readouterr()
     print("\n" + "=" * 60)
     print("CASE 1 — Valid tenant")
-    print(f"  X-Target-ID       : acme")
-    print(f"  credential tid    : acme")
+    print("  X-Target-ID       : acme")
+    print("  credential tid    : acme")
     print(f"  HTTP status       : {resp.status_code}")
     print(f"  Response body     : {resp.json()}")
     print(f"  stdout captured   : {captured.out.strip()!r}")
@@ -65,8 +63,8 @@ def test_case2_tenant_mismatch_blocked(tc, capsys):
     captured = capsys.readouterr()
     print("\n" + "=" * 60)
     print("CASE 2 — Tenant mismatch")
-    print(f"  X-Target-ID       : tenant-a")
-    print(f"  credential tid    : tenant-b")
+    print("  X-Target-ID       : tenant-a")
+    print("  credential tid    : tenant-b")
     print(f"  HTTP status       : {resp.status_code}")
     print(f"  Response body     : {resp.json()}")
     print(f"  stdout captured   : {captured.out.strip()!r}")
@@ -80,9 +78,10 @@ def test_case3_no_tenant_claim_blocked(tc, capsys):
     # Issue a token without a tenant claim by bypassing create_access_token
     # and encoding the payload directly (no "tid" field).
     import os
+    from datetime import UTC, datetime, timedelta
+
     from jose import jwt as jose_jwt
     secret = os.environ["SECRET_KEY"]
-    from datetime import UTC, datetime, timedelta
     payload = {
         "sub": "alice",
         "role": "VIEWER",
@@ -101,8 +100,8 @@ def test_case3_no_tenant_claim_blocked(tc, capsys):
     captured = capsys.readouterr()
     print("\n" + "=" * 60)
     print("CASE 3 — Missing tenant claim in credential")
-    print(f"  X-Target-ID       : acme")
-    print(f"  credential tid    : (none — unbound token)")
+    print("  X-Target-ID       : acme")
+    print("  credential tid    : (none — unbound token)")
     print(f"  HTTP status       : {resp.status_code}")
     print(f"  Response body     : {resp.json()}")
     print(f"  stdout captured   : {captured.out.strip()!r}")

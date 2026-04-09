@@ -222,7 +222,9 @@ def get_policy(name: str | None, tenant_id: str = "default") -> "Policy":
         cache_key = (name, tenant_id)
         entry = _tenant_policy_cache.get(cache_key, _MISSING)
         if entry is _MISSING or time.monotonic() - entry[1] > CACHE_TTL:  # type: ignore[index]
-            _tenant_policy_cache[cache_key] = (_load_tenant_policy(name, tenant_id), time.monotonic())
+            _tenant_policy_cache[cache_key] = (
+                _load_tenant_policy(name, tenant_id), time.monotonic()
+            )
         tenant_policy = _tenant_policy_cache[cache_key][0]
         if tenant_policy is not None:
             return tenant_policy

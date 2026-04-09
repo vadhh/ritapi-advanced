@@ -297,7 +297,9 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
                 if isinstance(payload, (dict, list)):
                     hit, category, snippet = _scan_recursive(payload)
                     if hit:
-                        get_perf(request)["injection_ms"] = round((_time.monotonic() - _t0) * 1000, 3)
+                        get_perf(request)["injection_ms"] = round(
+                            (_time.monotonic() - _t0) * 1000, 3
+                        )
                         self._log_and_block(client_ip, request, category, snippet)
                         append_detection(
                             request,
@@ -321,7 +323,9 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
                         matches = scanner.scan_payload(body)
                         if matches:
                             top = matches[0]
-                            get_perf(request)["injection_ms"] = round((_time.monotonic() - _t0) * 1000, 3)
+                            get_perf(request)["injection_ms"] = round(
+                                (_time.monotonic() - _t0) * 1000, 3
+                            )
                             self._log_and_block(client_ip, request, f"yara:{top.rule}", top.rule)
                             append_detection(
                                 request,

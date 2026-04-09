@@ -12,11 +12,10 @@ Policy-driven behavior:
 import hashlib
 import logging
 import os
+import time
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
-
-import time
 
 from app.middlewares.detection_schema import append_detection, ensure_detections_container
 from app.policies.service import DEFAULT_POLICY, get_policy
@@ -90,7 +89,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         if redis and (client_ip or api_key):
             path_key = path.split("?")[0].replace("/", "_")
-            throttle_key = tenant_scoped_key(tenant_id, "throttle", client_ip) if client_ip else None
+            throttle_key = (
+                tenant_scoped_key(tenant_id, "throttle", client_ip) if client_ip else None
+            )
 
             # Build one key per identity: IP and (if present) API key
             identities = []

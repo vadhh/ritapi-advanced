@@ -265,7 +265,9 @@ class BotDetectionMiddleware(BaseHTTPMiddleware):
                        tenant_id=tenant_id)
 
         if not hits:
-            get_perf(request)["bot_ms"] = round(_t_bot_pre_elapsed + (_time.monotonic() - _t_bot_post) * 1000, 3)
+            get_perf(request)["bot_ms"] = round(
+                _t_bot_pre_elapsed + (_time.monotonic() - _t_bot_post) * 1000, 3
+            )
             return response
 
         hits.sort(key=lambda x: x[1], reverse=True)

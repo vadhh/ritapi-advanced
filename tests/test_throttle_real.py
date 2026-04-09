@@ -9,9 +9,7 @@ Throttle must actually limit traffic:
 import asyncio
 from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi import Request
-from starlette.responses import JSONResponse as StarletteJSONResponse
 from starlette.responses import Response
 
 from app.middlewares.decision_engine import (

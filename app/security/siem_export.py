@@ -30,9 +30,16 @@ Required SIEM fields (always scalar, always present):
   status_code     — HTTP status code returned to the client
 
 Extension fields (scalar, SIEM-safe; SIEM tools may ignore):
-  latency_ms      — float | null
-  detection_count — int (number of detections accumulated on this request)
-  detection_types — comma-joined sorted set of detection type strings
+  latency_ms           — float | null
+  detection_count      — int (number of detections accumulated on this request)
+  detection_types      — comma-joined sorted set of detection type strings (SIEM flat-schema)
+
+Rich extension fields (written by security_event_logger, not build_siem_event):
+  detections           — list[dict] per-detection detail (type / score / severity / reason / source)
+  detection_type_list  — list[str] array form of detection_types; friendlier for dashboards/demos
+  decision_source      — always "decision_engine"; identifies the verdict-issuing component
+  policy_applied       — DecisionActions key consulted for the trigger (e.g. "on_bot_detection")
+  perf                 — dict[str, float] per-stage latency breakdown in milliseconds
 """
 from __future__ import annotations
 

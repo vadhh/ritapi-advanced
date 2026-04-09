@@ -128,6 +128,17 @@ def log_security_event(
         # Rich extension for non-SIEM consumers — SIEM tools should ignore this key
         event["detections"] = detections
 
+        # SIEM clarity enrichment fields — scalar / array, safe for all consumers.
+        #   decision_source   — component that produced the final allow/block verdict
+        #   detection_type_list — array form of detection_types (list is friendlier for
+        #                         demos, client dashboards, and Kibana/Splunk array queries)
+        #   policy_applied    — DecisionActions key consulted for this trigger type
+        #                       (e.g. "on_bot_detection"), useful for debugging policy YAML
+        _trigger = _safe_str(trigger_type)
+        event["decision_source"] = "decision_engine"
+        event["detection_type_list"] = sorted({d["type"] for d in detections if d.get("type")})
+        event["policy_applied"] = f"on_{_trigger}" if _trigger not in ("none", "") else "none"
+
         # Per-stage performance breakdown (ms).  Written by individual middlewares
         # into request.state.perf; absent keys mean the stage was bypassed or not yet
         # instrumented.  total_ms is the end-to-end wall time (written by RequestIDMiddleware

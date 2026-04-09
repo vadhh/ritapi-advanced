@@ -17,7 +17,6 @@ from app.policies.service import DecisionActions, Policy
 from app.security.security_event_logger import log_security_event
 from app.security.siem_export import build_siem_event
 
-
 # ---------------------------------------------------------------------------
 # Unit: build_siem_event carries tenant_status
 # ---------------------------------------------------------------------------
@@ -194,7 +193,7 @@ def test_decision_engine_block_emits_unauthenticated_tenant_status(capsys):
             )
 
     raw = capsys.readouterr().out.strip()
-    lines = [l for l in raw.splitlines() if l.strip()]
+    lines = [ln for ln in raw.splitlines() if ln.strip()]
     assert lines, "Expected at least one SIEM event"
     event = json.loads(lines[0])
     assert event["tenant_id"] is None, (
