@@ -23,7 +23,7 @@ from app.security.siem_export import _derive_severity, build_siem_event
 # All fields that must be present in every SIEM event (flat scalars only)
 SIEM_REQUIRED_FIELDS = {
     "event_type", "severity", "action", "timestamp",
-    "request_id", "tenant_id", "source_ip",
+    "request_id", "tenant_id", "tenant_status", "source_ip",
     "method", "route", "reason", "trigger_type", "trigger_source",
     "status_code", "latency_ms", "detection_count", "detection_types",
 }

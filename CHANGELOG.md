@@ -112,6 +112,58 @@ Policy-driven routing and enforcement release.
 - `DEBIAN/prerm` — stops MiniFW-AI service on removal
 - `DEBIAN/postrm` — cleans up policy configs and backups on purge
 
+## [1.4.0] — 2026-04-08
+
+Engine hardening release. No architecture changes. No UI changes.
+
+### Fixed
+
+**M-7 — DecisionEngine routing (critical)**
+- All middlewares now append detections via `append_detection()` instead of returning `JSONResponse` directly
+- `HardGateMiddleware` fully rewritten: all 5 check methods call `append_detection()` then `call_next()`
+- `InjectionDetectionMiddleware`: removed dead `_blocked_response()` static method and unused import
+- `DecisionEngineMiddleware` is now the sole authority for all 403/429 responses
+
+**M-7 — Policy mapping gap (critical)**
+- `DecisionActions` was missing `on_blocked_ip`, `on_blocked_asn`, `on_yara`, `on_ddos_spike`, `on_invalid_api_key` — all 5 HardGate types fell through to `"monitor"` (silent pass-through)
+- Added all 5 fields defaulting to `"block"`; added to `_parse_policy_data()` for YAML override support
+
+**Real throttle**
+- `_apply_throttle()` was a no-op flag; rewritten as Redis pipeline counter
+- `count > THROTTLE_MAX_HITS` returns 429; below threshold passes through; Redis unavailable fails-open
+- Constants: `THROTTLE_MAX_HITS` (default 5), `THROTTLE_WINDOW` (default 60 s), both env-configurable
+
+**Redis safety**
+- `rate_limit.py`: removed `setex` double-write; `redis.set(nx=True, ex=ttl)` is now the single atomic op
+- `exfiltration_detection._incr`: replaced two-step INCR + conditional EXPIRE with pipeline (INCR + EXPIRE NX)
+- `exfiltration_detection._incrby`: removed try/except fallback that executed the pipeline twice on error
+
+**Tenant logging**
+- `security_event_logger`: `tenant_id` is now `str | None`; `None` when no verified tenant
+- `siem_export`: `build_siem_event()` now includes `tenant_status` field (`"authenticated"` / `"unauthenticated"`)
+- Eliminates the `"default"` ambiguity in SIEM output
+
+### Added
+
+**Cache invalidation**
+- `_route_cache` and `_tenant_policy_cache` now store `(value, timestamp)` tuples
+- `CACHE_TTL_SECONDS` env var (default 60 s) controls TTL; expired entries evicted on access
+
+**`POST /admin/reload`**
+- Force-reloads `routing.yml` and all policy YAML files, clears both caches
+- Requires SUPER_ADMIN or valid `X-Admin-Secret`
+- Returns `{"reloaded": true, "routes": N, "policies": N}`
+
+**Startup validation**
+- App refuses to start if `DASHBOARD_TOKEN` is not set (`RuntimeError`)
+- App refuses to start if `ADMIN_SECRET` is not set (`RuntimeError`)
+
+### Tests
+
+- 335 tests total, 335 passed, 0 failed
+- 7 new test files: `test_m7_hardgate_integration.py` (12), `test_m7_decision_engine_routing.py` (6), `test_throttle_real.py` (4), `test_redis_bugs.py` (8), `test_tenant_status.py` (7), `test_cache_invalidation.py` (9), `test_admin_dashboard_security.py` (15)
+- 6 existing test files updated to reflect new enforcement model
+
 ## [Unreleased]
 
 _Nothing yet._

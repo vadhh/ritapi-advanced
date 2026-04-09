@@ -15,8 +15,13 @@ def test_metrics_returns_prometheus_text(client):
     assert "ritapi_requests_total" in resp.text
 
 
-def test_dashboard_accessible_without_token(client):
-    """Dashboard is open when DASHBOARD_TOKEN env var is not set."""
-    resp = client.get("/dashboard", headers={"User-Agent": "pytest/1.0"})
+def test_dashboard_requires_token(client):
+    """Dashboard always requires DASHBOARD_TOKEN — open access is not allowed."""
+    import os
+    token = os.environ["DASHBOARD_TOKEN"]
+    resp = client.get(
+        "/dashboard",
+        headers={"Authorization": f"Bearer {token}", "User-Agent": "pytest/1.0"},
+    )
     assert resp.status_code == 200
     assert "RitAPI" in resp.text

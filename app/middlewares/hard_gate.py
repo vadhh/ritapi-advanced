@@ -1,18 +1,11 @@
 """
 Hard Gate Middleware.
 
-Runs immediately after RequestIDMiddleware (second outermost), before all
-detection middlewares.  Returns 403 immediately — never calls call_next —
-when any of the following hard-block conditions are met:
-
-  1. Client IP is in the blocked-IP set (BLOCKED_IPS env var or BLOCKED_IPS_FILE)
-  2. Client ASN is in the blocked-ASN set (BLOCKED_ASNS env var)
-  3. A non-empty X-API-Key header contains an invalid or revoked key, but only
-     when the resolved route policy explicitly requires API-key auth
-  4. The request body matches a YARA rule (uses existing scanner if available)
-
-Every hard block is audited via log_decision before the response is returned.
-The X-Request-ID header is echoed in all 403 responses.
+Runs after TenantContext, before RateLimit and all detection middlewares.
+Appends detections for known-bad conditions (blocked IPs/ASNs, DDoS spikes,
+YARA body matches, invalid API keys) onto request.state.detections so that
+DecisionEngineMiddleware (innermost) is the sole authority that issues 403/429
+responses.
 
 Fail-open guarantee
 -------------------
@@ -24,16 +17,15 @@ import logging
 import os
 
 from fastapi import Request
-from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.security.security_event_logger import log_security_event
+from app.middlewares.detection_schema import append_detection, ensure_detections_container
 from app.utils.redis_client import RedisClientSingleton
 from app.utils.tenant_key import tenant_scoped_key
 
 logger = logging.getLogger(__name__)
 
-# Per-IP requests-per-second threshold before DDoS spike block.
+# Per-IP requests-per-second threshold before DDoS spike detection.
 _SPIKE_THRESHOLD: int = int(os.getenv("HARD_GATE_SPIKE_THRESHOLD", "100"))
 
 
@@ -69,68 +61,58 @@ def _get_client_ip(request: Request) -> str:
 
 class HardGateMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        ensure_detections_container(request)
         ip = _get_client_ip(request)
-        request_id = getattr(request.state, "request_id", "")
 
         # 0. DDoS spike check — runs before all other checks
-        spike_response = self._check_spike(request, ip, request_id)
-        if spike_response is not None:
-            return spike_response
+        self._check_spike(request, ip)
 
         # 1. Blocked IP
         if ip in _BLOCKED_IPS:
-            return self._hard_block(request, ip, request_id, "blocked_ip", f"IP {ip} is blocked")
+            logger.warning(
+                "HardGate: blocked IP %s on %s %s", ip, request.method, request.url.path
+            )
+            append_detection(
+                request,
+                detection_type="blocked_ip",
+                score=1.0,
+                reason=f"IP {ip} is blocked",
+                status_code=403,
+                source="hard_gate",
+                metadata={"ip": ip},
+            )
 
         # 2. Blocked ASN (skip gracefully if lookup unavailable)
         if _BLOCKED_ASNS:
             asn = self._lookup_asn(ip)
             if asn and asn in _BLOCKED_ASNS:
-                return self._hard_block(
-                    request, ip, request_id, "blocked_asn", f"ASN {asn} is blocked"
+                logger.warning(
+                    "HardGate: blocked ASN %s (%s) on %s %s",
+                    asn, ip, request.method, request.url.path,
+                )
+                append_detection(
+                    request,
+                    detection_type="blocked_asn",
+                    score=1.0,
+                    reason=f"ASN {asn} is blocked",
+                    status_code=403,
+                    source="hard_gate",
+                    metadata={"asn": asn, "ip": ip},
                 )
 
         # 3. YARA match on request body (skip gracefully if scanner unavailable).
         # Always mark yara_scanned=True so InjectionDetectionMiddleware skips a second scan.
-        yara_block = await self._check_yara(request, ip, request_id)
+        await self._check_yara(request, ip)
         request.state.yara_scanned = True
-        if yara_block is not None:
-            return yara_block
 
         # 4. Invalid API key when route policy requires API-key auth
-        api_key_block = self._check_api_key(request, ip, request_id)
-        if api_key_block is not None:
-            return api_key_block
+        self._check_api_key(request, ip)
 
         return await call_next(request)
 
     # ------------------------------------------------------------------
-    # Internal helpers
+    # Internal helpers — append detections, never return responses
     # ------------------------------------------------------------------
-
-    def _hard_block(
-        self,
-        request: Request,
-        ip: str,
-        request_id: str,
-        trigger_type: str,
-        reason: str,
-    ) -> JSONResponse:
-        log_security_event(
-            request,
-            action="block",
-            status_code=403,
-            reason=reason,
-            trigger_type=trigger_type,
-            trigger_source="hard_gate",
-        )
-        logger.warning(
-            "HardGate: blocking %s %s from %s — %s", request.method, request.url.path, ip, reason
-        )
-        return JSONResponse(
-            {"error": "Forbidden", "detail": reason},
-            status_code=403,
-            headers={"X-Request-ID": request_id},
-        )
 
     def _lookup_asn(self, ip: str) -> str | None:
         """Return ASN string for the IP, or None if lookup is unavailable or fails."""
@@ -140,26 +122,34 @@ class HardGateMiddleware(BaseHTTPMiddleware):
         except Exception:
             return None
 
-    async def _check_yara(self, request: Request, ip: str, request_id: str):
-        """Return a block response on YARA match, or None to continue."""
+    async def _check_yara(self, request: Request, ip: str) -> None:
+        """Append a detection if the request body matches a YARA rule."""
         try:
             from app.utils.yara_scanner import get_yara_scanner
             scanner = get_yara_scanner()
             if not scanner.rules_loaded:
-                return None
+                return
             body = await request.body()
             if not body:
-                return None
+                return
             matches = scanner.scan_payload(body)
             if matches:
                 reason = f"YARA rule match: {matches[0].rule}"
-                return self._hard_block(request, ip, request_id, "yara", reason)
+                logger.warning("HardGate: YARA match from %s — %s", ip, reason)
+                append_detection(
+                    request,
+                    detection_type="yara",
+                    score=1.0,
+                    reason=reason,
+                    status_code=403,
+                    source="hard_gate",
+                    metadata={"rule": matches[0].rule, "ip": ip},
+                )
         except Exception:  # noqa: S110
             pass
-        return None
 
-    def _check_spike(self, request: Request, ip: str, request_id: str):
-        """Return 429 if IP exceeds HARD_GATE_SPIKE_THRESHOLD req/s, else None.
+    def _check_spike(self, request: Request, ip: str) -> None:
+        """Append a detection if IP exceeds HARD_GATE_SPIKE_THRESHOLD req/s.
 
         Uses a 1-second Redis sliding window via INCR + EXPIRE NX.
         Fail-open: if Redis is unavailable the check is skipped.
@@ -167,7 +157,7 @@ class HardGateMiddleware(BaseHTTPMiddleware):
         try:
             redis = RedisClientSingleton.get_client()
             if redis is None:
-                return None
+                return
 
             raw_tid = getattr(request.state, "claimed_tenant_id", None)
             tenant_id = raw_tid if isinstance(raw_tid, str) and raw_tid else "default"
@@ -180,29 +170,24 @@ class HardGateMiddleware(BaseHTTPMiddleware):
             count = results[0]
 
             if count > _SPIKE_THRESHOLD:
-                log_security_event(
-                    request,
-                    action="block",
-                    status_code=429,
-                    reason=f"DDoS spike: {count} req/s exceeds threshold {_SPIKE_THRESHOLD}",
-                    trigger_type="ddos_spike",
-                    trigger_source="hard_gate",
-                )
                 logger.warning(
                     "HardGate: DDoS spike from %s — %d req/s > threshold %d",
                     ip, count, _SPIKE_THRESHOLD,
                 )
-                return JSONResponse(
-                    {"error": "Too Many Requests", "detail": "ddos_spike"},
+                append_detection(
+                    request,
+                    detection_type="ddos_spike",
+                    score=1.0,
+                    reason=f"DDoS spike: {count} req/s exceeds threshold {_SPIKE_THRESHOLD}",
                     status_code=429,
-                    headers={"X-Request-ID": request_id},
+                    source="hard_gate",
+                    metadata={"count": count, "threshold": _SPIKE_THRESHOLD, "ip": ip},
                 )
         except Exception:  # noqa: S110
             pass
-        return None
 
-    def _check_api_key(self, request: Request, ip: str, request_id: str):
-        """Return a block response if the API key is present but invalid.
+    def _check_api_key(self, request: Request, ip: str) -> None:
+        """Append a detection if the API key is present but invalid.
 
         Only triggered when request.state.policy is already attached AND
         the policy requires API-key auth.  DecisionEngineMiddleware runs
@@ -211,27 +196,33 @@ class HardGateMiddleware(BaseHTTPMiddleware):
         """
         raw_key = request.headers.get("x-api-key") or request.headers.get("X-API-Key")
         if not raw_key:
-            return None
+            return
 
         # Only proceed if policy is already in request state (set by a prior
         # middleware or test setup).  If not present, skip — fail open.
         policy = getattr(request.state, "policy", None)
         if policy is None:
-            return None
+            return
 
         if not getattr(getattr(policy, "auth", None), "api_key", False):
-            return None
+            return
 
         try:
             from app.utils.redis_client import RedisClientSingleton
             if RedisClientSingleton.get_client() is None:
-                return None  # Redis unavailable — cannot validate, fail open
+                return  # Redis unavailable — cannot validate, fail open
 
             from app.auth.api_key_handler import validate_api_key
             if validate_api_key(raw_key) is None:
-                return self._hard_block(
-                    request, ip, request_id, "invalid_api_key", "Invalid or revoked API key"
+                logger.warning("HardGate: invalid API key from %s", ip)
+                append_detection(
+                    request,
+                    detection_type="invalid_api_key",
+                    score=1.0,
+                    reason="Invalid or revoked API key",
+                    status_code=403,
+                    source="hard_gate",
+                    metadata={"ip": ip},
                 )
         except Exception:  # noqa: S110
             pass
-        return None

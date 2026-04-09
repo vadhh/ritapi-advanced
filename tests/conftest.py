@@ -15,6 +15,7 @@ os.environ.setdefault("JWT_EXPIRE_MINUTES", "60")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/15")  # DB 15 = test DB
 os.environ.setdefault("LOG_PATH", "/tmp/ritapi_test.jsonl")
 os.environ.setdefault("ADMIN_SECRET", "test-admin-secret")
+os.environ.setdefault("DASHBOARD_TOKEN", "test-dashboard-token")
 os.environ.setdefault("BOT_DETECTION_BYPASS_IPS", "127.0.0.1,::1,testclient")  # testclient = Starlette TestClient pseudo-IP
 # Set rate limit well below exfiltration bulk_access threshold (50) so rate limit
 # fires first in tests and bulk_access doesn't interfere.

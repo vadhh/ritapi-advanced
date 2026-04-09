@@ -6,6 +6,7 @@ to a named route based on path prefix + HTTP method matching.
 """
 import logging
 import os
+import time
 from dataclasses import dataclass
 
 import yaml
@@ -16,6 +17,8 @@ _ROUTING_CONFIG_PATH = os.getenv(
     "ROUTING_CONFIG_PATH",
     os.path.join(os.path.dirname(__file__), "../../configs/routing.yml"),
 )
+
+CACHE_TTL: int = int(os.getenv("CACHE_TTL_SECONDS", "60"))
 
 
 @dataclass
@@ -29,8 +32,9 @@ class Route:
 
 _routes: list[Route] = []
 _loaded: bool = False
-# Memoised (path, method) → Route | None.  Cleared on reload_routes().
-_route_cache: dict[tuple[str, str], "Route | None"] = {}
+# Memoised (path, method) → (Route | None, timestamp).  Cleared on reload_routes().
+_route_cache: dict[tuple[str, str], tuple["Route | None", float]] = {}
+_MISSING = object()  # sentinel for "not in cache"
 
 
 def _load_routes() -> None:
@@ -76,15 +80,19 @@ def resolve_route(path: str, method: str) -> "Route | None":
 
     method = method.upper()
     key = (path, method)
-    if key in _route_cache:
-        return _route_cache[key]
+    entry = _route_cache.get(key, _MISSING)
+    if entry is not _MISSING:
+        value, ts = entry  # type: ignore[misc]
+        if time.monotonic() - ts <= CACHE_TTL:
+            return value
+        del _route_cache[key]  # expired
 
     result = None
     for route in _routes:
         if path.startswith(route.path_prefix) and method in route.methods:
             result = route
             break
-    _route_cache[key] = result
+    _route_cache[key] = (result, time.monotonic())
     return result
 
 

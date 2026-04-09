@@ -12,6 +12,7 @@ Each policy file defines:
 """
 import logging
 import os
+import time
 from dataclasses import dataclass, field
 
 import yaml
@@ -56,6 +57,12 @@ class DecisionActions:
     on_exfiltration_block: str = "block"  # pre-request block when counter exceeded
     on_schema_violation: str = "block"  # request body fails schema validation
     on_payload_too_large: str = "block"  # request body exceeds MAX_BODY size cap
+    # HardGate detection types — must block unconditionally
+    on_blocked_ip: str = "block"
+    on_blocked_asn: str = "block"
+    on_yara: str = "block"
+    on_ddos_spike: str = "block"
+    on_invalid_api_key: str = "block"
 
     def get_action(self, detection_type: str) -> str:
         """Return the action for a detection type.
@@ -82,10 +89,13 @@ class Policy:
 
 _policies: dict[str, Policy] = {}
 _loaded: bool = False
-# Memoised (policy_name, tenant_id) → Policy | None.
+# Memoised (policy_name, tenant_id) → (Policy | None, timestamp).
 # None means "no tenant-specific file found; use global".
 # Cleared on reload_policies() so hot-reload still works.
-_tenant_policy_cache: dict[tuple[str | None, str], "Policy | None"] = {}
+_tenant_policy_cache: dict[tuple[str | None, str], tuple["Policy | None", float]] = {}
+_MISSING = object()  # sentinel for "not in cache"
+
+CACHE_TTL: int = int(os.getenv("CACHE_TTL_SECONDS", "60"))
 
 # Default policy used when no policy is assigned to a route
 DEFAULT_POLICY = Policy(
@@ -126,6 +136,12 @@ def _parse_policy_data(name: str, data: dict) -> Policy:
             on_exfiltration=actions_data.get("on_exfiltration", "monitor"),
             on_exfiltration_block=actions_data.get("on_exfiltration_block", "block"),
             on_schema_violation=actions_data.get("on_schema_violation", "block"),
+            on_payload_too_large=actions_data.get("on_payload_too_large", "block"),
+            on_blocked_ip=actions_data.get("on_blocked_ip", "block"),
+            on_blocked_asn=actions_data.get("on_blocked_asn", "block"),
+            on_yara=actions_data.get("on_yara", "block"),
+            on_ddos_spike=actions_data.get("on_ddos_spike", "block"),
+            on_invalid_api_key=actions_data.get("on_invalid_api_key", "block"),
         ),
     )
 
@@ -201,12 +217,13 @@ def get_policy(name: str | None, tenant_id: str = "default") -> "Policy":
     if not _loaded:
         _load_policies()
 
-    # 1. Try tenant-specific override first (result is cached after first lookup)
+    # 1. Try tenant-specific override first (result is cached with TTL after first lookup)
     if tenant_id and tenant_id != "default":
         cache_key = (name, tenant_id)
-        if cache_key not in _tenant_policy_cache:
-            _tenant_policy_cache[cache_key] = _load_tenant_policy(name, tenant_id)
-        tenant_policy = _tenant_policy_cache[cache_key]
+        entry = _tenant_policy_cache.get(cache_key, _MISSING)
+        if entry is _MISSING or time.monotonic() - entry[1] > CACHE_TTL:  # type: ignore[index]
+            _tenant_policy_cache[cache_key] = (_load_tenant_policy(name, tenant_id), time.monotonic())
+        tenant_policy = _tenant_policy_cache[cache_key][0]
         if tenant_policy is not None:
             return tenant_policy
 

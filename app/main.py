@@ -2,7 +2,9 @@
 RitAPI Advanced — API & IP Protection System
 Entry point for the FastAPI application.
 """
+import logging
 import os
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 
@@ -24,7 +26,27 @@ from app.middlewares.tenant_context import TenantContextMiddleware
 from app.web.admin import router as admin_router
 from app.web.dashboard import router as dashboard_router
 
-app = FastAPI(title="RitAPI Advanced", version="0.1.0")
+_startup_logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):  # noqa: ARG001
+    """Startup validation: fail fast on missing required configuration."""
+    dashboard_token = os.getenv("DASHBOARD_TOKEN")
+    if not dashboard_token:
+        raise RuntimeError(
+            "DASHBOARD_TOKEN is not set. Dashboard requires a token. "
+            "Set DASHBOARD_TOKEN in your environment or .env file."
+        )
+    if not os.getenv("ADMIN_SECRET"):
+        raise RuntimeError(
+            "ADMIN_SECRET is not set. Required for admin bootstrap auth. "
+            "Set ADMIN_SECRET in your environment or .env file."
+        )
+    yield
+
+
+app = FastAPI(title="RitAPI Advanced", version="0.1.0", lifespan=lifespan)
 
 # ── Middleware stack — last add_middleware() runs first on incoming requests ──
 #

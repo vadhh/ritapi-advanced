@@ -22,6 +22,7 @@ Legacy support: request.state.block = True still triggers a block for middleware
 that short-circuit directly.
 """
 import logging
+import os
 import time as _time
 
 from fastapi import Request
@@ -37,6 +38,12 @@ from app.utils.redis_client import RedisClientSingleton
 from app.utils.tenant_key import tenant_scoped_key
 
 logger = logging.getLogger(__name__)
+
+# Throttle: maximum number of throttle-flagged requests before escalating to 429.
+# Each additional throttle detection increments a per-IP Redis counter; once
+# count > THROTTLE_MAX_HITS the request is blocked with 429 (not just slowed).
+THROTTLE_MAX_HITS: int = int(os.getenv("THROTTLE_MAX_HITS", "5"))
+THROTTLE_WINDOW: int = int(os.getenv("THROTTLE_WINDOW_SECONDS", "60"))
 
 
 class DecisionEngineMiddleware(BaseHTTPMiddleware):
@@ -86,7 +93,10 @@ class DecisionEngineMiddleware(BaseHTTPMiddleware):
                     request, ip, reason, det_type, score, status_code, source
                 )
             elif action == "throttle":
-                self._apply_throttle(request, ip, reason, det_type, score, source)
+                throttle_response = self._apply_throttle(request, ip, reason, det_type, score, source)
+                if throttle_response is not None:
+                    get_perf(request)["decision_ms"] = round((_time.monotonic() - _t_de) * 1000, 3)
+                    return throttle_response
             elif action == "monitor":
                 self._log_monitor(request, ip, reason, det_type, score, source)
             else:
@@ -177,8 +187,39 @@ class DecisionEngineMiddleware(BaseHTTPMiddleware):
     def _apply_throttle(
         self, request: Request, ip: str, reason: str, det_type: str, score: float,
         trigger_source: str = "decision_engine",
-    ) -> None:
-        """Mark this IP for throttling — rate_limit reads this on next request."""
+    ) -> "JSONResponse | None":
+        """Increment the throttle counter for this IP.
+
+        Returns a 429 JSONResponse when the counter exceeds THROTTLE_MAX_HITS,
+        blocking the request immediately. Returns None to pass the request through
+        (below threshold or Redis unavailable — fail-open).
+        """
+        redis = RedisClientSingleton.get_client()
+        if redis:
+            try:
+                raw_tid = getattr(request.state, "tenant_id", None)
+                tenant_id = raw_tid if isinstance(raw_tid, str) and raw_tid else "default"
+                key = tenant_scoped_key(tenant_id, "throttle", ip)
+                pipe = redis.pipeline()
+                pipe.incr(key)
+                pipe.expire(key, THROTTLE_WINDOW, nx=True)
+                results = pipe.execute()
+                count = int(results[0])
+                if count > THROTTLE_MAX_HITS:
+                    logger.info(
+                        "DecisionEngine: throttle escalated to block for %s on %s %s"
+                        " — %s (count=%d > max=%d)",
+                        ip, request.method, request.url.path, reason, count, THROTTLE_MAX_HITS,
+                    )
+                    return self._block_response(
+                        request, ip,
+                        f"{reason} (throttle limit exceeded: {count}/{THROTTLE_MAX_HITS})",
+                        det_type, score, 429, trigger_source,
+                    )
+            except Exception as e:
+                logger.error("Throttle Redis error: %s", e)
+
+        # Below threshold (or Redis unavailable): log throttle event and pass through
         logger.info(
             "DecisionEngine: throttling %s %s from %s — %s",
             request.method, request.url.path, ip, reason,
@@ -191,14 +232,7 @@ class DecisionEngineMiddleware(BaseHTTPMiddleware):
             trigger_type=det_type,
             trigger_source=trigger_source,
         )
-        redis = RedisClientSingleton.get_client()
-        if redis:
-            try:
-                raw_tid = getattr(request.state, "tenant_id", None)
-                tenant_id = raw_tid if isinstance(raw_tid, str) and raw_tid else "default"
-                redis.set(tenant_scoped_key(tenant_id, "throttle", ip), "1", ex=60)
-            except Exception as e:
-                logger.error("Throttle Redis error: %s", e)
+        return None
 
     def _log_monitor(
         self, request: Request, ip: str, reason: str, det_type: str, score: float,

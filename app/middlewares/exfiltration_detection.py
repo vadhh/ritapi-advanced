@@ -50,29 +50,19 @@ CRAWL_WINDOW             = 300            # 5 minutes
 # ---------------------------------------------------------------------------
 
 def _incr(redis, key: str, ttl: int) -> int:
-    val = redis.incr(key)
-    if val == 1:
-        redis.expire(key, ttl)
-    return val
+    """Increment counter and set TTL on first write only (atomic pipeline, Redis 7+)."""
+    pipe = redis.pipeline()
+    pipe.incr(key)
+    pipe.expire(key, ttl, nx=True)
+    return pipe.execute()[0]
 
 
 def _incrby(redis, key: str, amount: int, ttl: int) -> int:
-    """Increment key by amount, setting TTL only if not already set (atomic via pipeline).
-
-    Prefers EXPIRE NX (Redis 7+) for true atomicity. Falls back to a TTL check
-    for Redis < 7: sets TTL only when the key has no existing expiry (TTL == -1).
-    """
+    """Increment key by amount, setting TTL on first write only (atomic pipeline, Redis 7+)."""
     pipe = redis.pipeline()
     pipe.incrby(key, amount)
-    try:
-        pipe.expire(key, ttl, nx=True)  # NX: set only if no TTL exists — Redis 7+
-        results = pipe.execute()
-    except Exception:
-        # Redis < 7 doesn't support EXPIRE NX — fall back to conditional set
-        results = pipe.execute()
-        if redis.ttl(key) == -1:  # key exists but has no TTL
-            redis.expire(key, ttl)
-    return results[0]
+    pipe.expire(key, ttl, nx=True)
+    return pipe.execute()[0]
 
 
 def _sadd_count(redis, key: str, member: str, ttl: int) -> int:

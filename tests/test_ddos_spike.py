@@ -1,11 +1,13 @@
 """
 Tests for DDoS spike detection in HardGateMiddleware.
 
+Post M-7: HardGate appends a 'ddos_spike' detection and calls call_next.
+DecisionEngineMiddleware is the sole authority that issues 429 responses.
+
 Covers:
-- IP above HARD_GATE_SPIKE_THRESHOLD → 429 before route runs
-- IP below threshold → passes through
+- IP above HARD_GATE_SPIKE_THRESHOLD → ddos_spike detection appended, call_next called
+- IP below threshold → no detection, passes through
 - Redis unavailable → fail-open, request proceeds
-- 429 response includes X-Request-ID header
 """
 import asyncio
 from unittest.mock import MagicMock, patch
@@ -41,12 +43,15 @@ def _make_pipe_mock(count: int) -> MagicMock:
     return redis
 
 
-def test_spike_above_threshold_returns_429():
-    """IP exceeding HARD_GATE_SPIKE_THRESHOLD must receive 429 and route must not execute."""
-    route_called: list[bool] = []
+def test_spike_above_threshold_pushes_detection_and_calls_next():
+    """IP exceeding HARD_GATE_SPIKE_THRESHOLD must push ddos_spike detection and call call_next.
+
+    DecisionEngine (not HardGate) is responsible for the 429 response.
+    """
+    call_next_called: list[bool] = []
 
     async def fake_call_next(req: Request) -> Response:
-        route_called.append(True)
+        call_next_called.append(True)
         return Response(status_code=200)
 
     mock_redis = _make_pipe_mock(count=101)
@@ -57,26 +62,28 @@ def test_spike_above_threshold_returns_429():
             with patch.object(hard_gate_module, "_SPIKE_THRESHOLD", 100):
                 with patch.object(hard_gate_module, "RedisClientSingleton") as mock_singleton:
                     mock_singleton.get_client.return_value = mock_redis
-                    with patch("app.middlewares.hard_gate.log_security_event"):
-                        middleware = HardGateMiddleware(app=MagicMock())
-                        response = asyncio.get_event_loop().run_until_complete(
+                    middleware = HardGateMiddleware(app=MagicMock())
+                    with patch.object(middleware, "_check_yara", return_value=None):
+                        asyncio.get_event_loop().run_until_complete(
                             middleware.dispatch(mock_request, fake_call_next)
                         )
 
-    assert not route_called, "Route must NOT execute when spike threshold is exceeded"
-    assert response.status_code == 429
+    assert call_next_called, "HardGate must call call_next — DecisionEngine handles the 429"
+    detections = mock_request.state.detections
+    assert any(
+        d.get("type") == "ddos_spike" or d.get("detection_type") == "ddos_spike"
+        for d in detections
+    ), f"Expected 'ddos_spike' detection; got: {detections}"
 
 
-def test_spike_below_threshold_passes():
-    """IP below HARD_GATE_SPIKE_THRESHOLD must reach the route handler."""
-    route_called: list[bool] = []
-
+def test_spike_detection_has_correct_fields():
+    """ddos_spike detection must carry status_code=429, score=1.0, source=hard_gate."""
     async def fake_call_next(req: Request) -> Response:
-        route_called.append(True)
         return Response(status_code=200)
 
-    mock_redis = _make_pipe_mock(count=50)
-    mock_request = _make_mock_request(ip="8.8.8.8")
+    mock_redis = _make_pipe_mock(count=101)
+    mock_request = _make_mock_request(ip="9.9.9.9")
+    mock_request.state.detections = []
 
     with patch.object(hard_gate_module, "_BLOCKED_IPS", frozenset()):
         with patch.object(hard_gate_module, "_BLOCKED_ASNS", frozenset()):
@@ -85,23 +92,56 @@ def test_spike_below_threshold_passes():
                     mock_singleton.get_client.return_value = mock_redis
                     middleware = HardGateMiddleware(app=MagicMock())
                     with patch.object(middleware, "_check_yara", return_value=None):
-                        response = asyncio.get_event_loop().run_until_complete(
+                        asyncio.get_event_loop().run_until_complete(
                             middleware.dispatch(mock_request, fake_call_next)
                         )
 
-    assert route_called, "Route must execute when spike is below threshold"
-    assert response.status_code == 200
+    detections = mock_request.state.detections
+    assert len(detections) == 1
+    d = detections[0]
+    assert d["type"] == "ddos_spike"
+    assert d["status_code"] == 429
+    assert d["score"] == 1.0
+    assert d["source"] == "hard_gate"
+
+
+def test_spike_below_threshold_passes():
+    """IP below HARD_GATE_SPIKE_THRESHOLD must reach call_next with no spike detection."""
+    call_next_called: list[bool] = []
+
+    async def fake_call_next(req: Request) -> Response:
+        call_next_called.append(True)
+        return Response(status_code=200)
+
+    mock_redis = _make_pipe_mock(count=50)
+    mock_request = _make_mock_request(ip="8.8.8.8")
+    mock_request.state.detections = []
+
+    with patch.object(hard_gate_module, "_BLOCKED_IPS", frozenset()):
+        with patch.object(hard_gate_module, "_BLOCKED_ASNS", frozenset()):
+            with patch.object(hard_gate_module, "_SPIKE_THRESHOLD", 100):
+                with patch.object(hard_gate_module, "RedisClientSingleton") as mock_singleton:
+                    mock_singleton.get_client.return_value = mock_redis
+                    middleware = HardGateMiddleware(app=MagicMock())
+                    with patch.object(middleware, "_check_yara", return_value=None):
+                        asyncio.get_event_loop().run_until_complete(
+                            middleware.dispatch(mock_request, fake_call_next)
+                        )
+
+    assert call_next_called, "Route must execute when spike is below threshold"
+    assert mock_request.state.detections == [], "No detections expected below threshold"
 
 
 def test_spike_redis_unavailable_fails_open():
     """When Redis is unavailable the spike check must be skipped (fail-open)."""
-    route_called: list[bool] = []
+    call_next_called: list[bool] = []
 
     async def fake_call_next(req: Request) -> Response:
-        route_called.append(True)
+        call_next_called.append(True)
         return Response(status_code=200)
 
     mock_request = _make_mock_request(ip="7.7.7.7")
+    mock_request.state.detections = []
 
     with patch.object(hard_gate_module, "_BLOCKED_IPS", frozenset()):
         with patch.object(hard_gate_module, "_BLOCKED_ASNS", frozenset()):
@@ -109,59 +149,9 @@ def test_spike_redis_unavailable_fails_open():
                 mock_singleton.get_client.return_value = None  # Redis unavailable
                 middleware = HardGateMiddleware(app=MagicMock())
                 with patch.object(middleware, "_check_yara", return_value=None):
-                    response = asyncio.get_event_loop().run_until_complete(
+                    asyncio.get_event_loop().run_until_complete(
                         middleware.dispatch(mock_request, fake_call_next)
                     )
 
-    assert route_called, "Spike check must fail open when Redis is unavailable"
-    assert response.status_code == 200
-
-
-def test_spike_429_includes_request_id_header():
-    """429 response from spike check must echo the X-Request-ID header."""
-    async def fake_call_next(req: Request) -> Response:
-        return Response(status_code=200)
-
-    mock_redis = _make_pipe_mock(count=200)
-    mock_request = _make_mock_request(ip="6.6.6.6")
-    mock_request.state.request_id = "spike-req-id-abc123"
-    mock_request.state.tenant_id = "default"
-
-    with patch.object(hard_gate_module, "_BLOCKED_IPS", frozenset()):
-        with patch.object(hard_gate_module, "_BLOCKED_ASNS", frozenset()):
-            with patch.object(hard_gate_module, "_SPIKE_THRESHOLD", 100):
-                with patch.object(hard_gate_module, "RedisClientSingleton") as mock_singleton:
-                    mock_singleton.get_client.return_value = mock_redis
-                    with patch("app.middlewares.hard_gate.log_security_event"):
-                        middleware = HardGateMiddleware(app=MagicMock())
-                        response = asyncio.get_event_loop().run_until_complete(
-                            middleware.dispatch(mock_request, fake_call_next)
-                        )
-
-    assert response.status_code == 429
-    assert response.headers.get("x-request-id") == "spike-req-id-abc123"
-
-
-def test_spike_calls_log_decision_with_ddos_spike():
-    """Spike block must call log_security_event with action=block, trigger_type=ddos_spike."""
-    async def fake_call_next(req: Request) -> Response:
-        return Response(status_code=200)
-
-    mock_redis = _make_pipe_mock(count=150)
-    mock_request = _make_mock_request(ip="5.5.5.5")
-
-    with patch.object(hard_gate_module, "_BLOCKED_IPS", frozenset()):
-        with patch.object(hard_gate_module, "_BLOCKED_ASNS", frozenset()):
-            with patch.object(hard_gate_module, "_SPIKE_THRESHOLD", 100):
-                with patch.object(hard_gate_module, "RedisClientSingleton") as mock_singleton:
-                    mock_singleton.get_client.return_value = mock_redis
-                    with patch("app.middlewares.hard_gate.log_security_event") as mock_log:
-                        middleware = HardGateMiddleware(app=MagicMock())
-                        asyncio.get_event_loop().run_until_complete(
-                            middleware.dispatch(mock_request, fake_call_next)
-                        )
-
-    mock_log.assert_called_once()
-    _, kwargs = mock_log.call_args
-    assert kwargs["action"] == "block"
-    assert kwargs["trigger_type"] == "ddos_spike"
+    assert call_next_called, "Spike check must fail open when Redis is unavailable"
+    assert mock_request.state.detections == []

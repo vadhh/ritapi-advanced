@@ -10,6 +10,7 @@ POST /admin/token       Issue a JWT (admin secret or SUPER_ADMIN token required)
 POST /admin/apikey      Issue an API key (ADMIN+ or admin secret)
 POST /admin/apikey/rotate  Rotate an existing key (ADMIN+ or admin secret)
 DELETE /admin/apikey    Revoke an API key (ADMIN+ or admin secret)
+POST /admin/reload      Reload routing + policy YAML files (SUPER_ADMIN or admin secret)
 """
 import hmac
 import logging
@@ -20,7 +21,9 @@ from pydantic import BaseModel, Field
 
 from app.auth.api_key_handler import issue_api_key, revoke_api_key, rotate_api_key
 from app.auth.jwt_handler import create_access_token
+from app.policies.service import get_all_policies, reload_policies
 from app.rbac.rbac_service import UserRole, require_role
+from app.routing.service import get_all_routes, reload_routes
 from app.utils.logging import log_admin_event
 
 logger = logging.getLogger(__name__)
@@ -287,3 +290,26 @@ async def revoke_key(
             detail="API key not found (already revoked or never existed).",
         )
     return {"revoked": True}
+
+
+@router.post("/reload", summary="Reload routing and policy config")
+async def reload_config(
+    request: Request,
+    caller: dict = Depends(_require_super_admin_access),
+):
+    """
+    Force-reload routing.yml and all policy YAML files. Clears all caches.
+    Requires SUPER_ADMIN or a valid ADMIN_SECRET header.
+    """
+    reload_routes()
+    reload_policies()
+    routes = get_all_routes()
+    policies = get_all_policies()
+    log_admin_event(
+        action="config_reloaded",
+        subject=caller.get("subject", "unknown"),
+        issuer=caller.get("subject", "unknown"),
+        request_id=getattr(request.state, "request_id", None),
+        metadata={"routes": len(routes), "policies": len(policies)},
+    )
+    return {"reloaded": True, "routes": len(routes), "policies": len(policies)}

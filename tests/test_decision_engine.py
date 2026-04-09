@@ -127,26 +127,43 @@ def test_injection_calls_call_next_not_blocked_response():
         )
 
 
-def test_throttle_sets_redis_key():
-    """_apply_throttle must set ritapi:throttle:{ip} key in Redis with TTL <= 60s."""
+def test_throttle_uses_pipeline_incr():
+    """_apply_throttle must use pipeline INCR + EXPIRE NX, not redis.set().
+
+    Verifies:
+    - pipeline is created
+    - INCR is called on the correct namespaced throttle key
+    - EXPIRE NX is called with the configured window
+    - Below threshold: returns None (request passes through)
+    """
+    pipe_mock = MagicMock()
+    pipe_mock.execute.return_value = [1, True]   # count=1, well below threshold
+
     mock_redis = MagicMock()
+    mock_redis.pipeline.return_value = pipe_mock
+
     middleware = DecisionEngineMiddleware(app=MagicMock())
     mock_request = MagicMock(spec=Request)
     mock_request.url.path = "/api/test"
     mock_request.method = "GET"
+    mock_request.state.tenant_id = None   # unauthenticated → falls back to "default"
 
     with patch("app.middlewares.decision_engine.RedisClientSingleton.get_client", return_value=mock_redis):
-        middleware._apply_throttle(mock_request, "1.2.3.4", "test reason", "rate_limit", 0.5)
+        result = middleware._apply_throttle(mock_request, "1.2.3.4", "test reason", "rate_limit", 0.5)
 
-    mock_redis.set.assert_called_once()
-    call_args = mock_redis.set.call_args
-    key = call_args[0][0]
-    # Key is namespaced with tenant_id; MagicMock state has no str tenant_id so
-    # the middleware falls back to "default".
-    assert key == "ritapi:default:throttle:1.2.3.4", f"Expected namespaced throttle key for IP, got {key}"
-    assert call_args[1].get("ex") == 60 or call_args[0][2] == 60 or (
-        len(call_args[0]) > 2 and call_args[0][2] == 60
-    ), "Throttle key must have TTL of 60s"
+    assert result is None, "Below threshold: throttle must pass through (return None)"
+    mock_redis.pipeline.assert_called_once()
+    pipe_mock.incr.assert_called_once()
+    incr_key = pipe_mock.incr.call_args[0][0]
+    assert "throttle" in incr_key and "1.2.3.4" in incr_key, (
+        f"INCR key must include 'throttle' and IP; got {incr_key!r}"
+    )
+    assert incr_key == "ritapi:default:throttle:1.2.3.4", (
+        f"Expected namespaced throttle key, got {incr_key!r}"
+    )
+    pipe_mock.expire.assert_called_once()
+    expire_args = pipe_mock.expire.call_args
+    assert expire_args[1].get("nx") is True, "EXPIRE must use nx=True to avoid resetting TTL"
 
 
 def test_rate_limit_calls_call_next_not_jsonresponse_429():

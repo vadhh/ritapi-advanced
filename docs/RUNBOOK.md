@@ -472,19 +472,34 @@ RitAPI Advanced uses per-process in-memory singletons for:
 
 - **YARA scanner** (`app/utils/yara_scanner.py`) — rules loaded once at startup
 - **Redis client** (`app/utils/redis_client.py`) — singleton per process
-- **Policy/route caches** (`app/policies/service.py`, `app/routing/service.py`) — loaded once per process
+- **Policy/route caches** (`app/policies/service.py`, `app/routing/service.py`) — TTL-cached per process (default 60 s, configurable via `CACHE_TTL_SECONDS`)
+
+### Cache TTL (v1.4.0)
+
+Policy and route cache entries now expire automatically after `CACHE_TTL_SECONDS` (default: 60). On expiry the next request to that cache key triggers a fresh disk read. This limits stale-config exposure to at most one TTL window without a full restart.
+
+### Forced reload via admin API (v1.4.0)
+
+```bash
+curl -s -X POST https://your-host/admin/reload \
+  -H "X-Admin-Secret: $ADMIN_SECRET"
+# → {"reloaded": true, "routes": N, "policies": N}
+```
+
+This clears both caches and reloads from disk **for the worker that receives the request**. Under multi-worker deployments, send the request once per worker or use a rolling restart instead.
 
 ### Impact under `uvicorn --workers N`
 
 When running with multiple Uvicorn workers, each worker is a separate OS process with its own memory space. This means:
 
-- `SIGHUP`-triggered `reload_policies()` only affects the **worker that receives the signal**, not all workers
+- `POST /admin/reload` only affects the worker that handles that specific request
 - YARA rule hot-reload via the admin endpoint only affects the worker handling that specific request
 - Redis reconnect state (`mark_failed()`) is per-worker — one worker may have a healthy client while another is in cooldown
+- TTL expiry is independent per worker, but bounded by `CACHE_TTL_SECONDS`
 
 ### Recommended configuration
 
-**Production (multiple workers):** Use a **process manager** (systemd, Kubernetes) to restart all workers atomically when config changes, rather than relying on in-process hot-reload:
+**Production (multiple workers):** Use a **process manager** (systemd, Kubernetes) to restart all workers atomically when config changes:
 
 ```bash
 # Full reload — restarts all workers atomically
@@ -492,6 +507,6 @@ kill -SIGTERM $(cat /var/run/ritapi.pid) && systemctl start ritapi
 # or in Kubernetes: kubectl rollout restart deployment/ritapi-advanced
 ```
 
-**Single-worker deployments** (e.g. `uvicorn --workers 1`) are not affected — SIGHUP hot-reload works correctly.
+**Single-worker deployments** (e.g. `uvicorn --workers 1`) are not affected — `POST /admin/reload` and TTL expiry work correctly.
 
-**If multi-worker hot-reload is required:** Front the singletons with a shared cache (Redis pub/sub invalidation or a shared config file with inotify) — this is a planned enhancement.
+**If multi-worker hot-reload is required:** Front the singletons with a shared cache (Redis pub/sub invalidation or a shared config file with inotify) — this is a planned Stage 5 enhancement.

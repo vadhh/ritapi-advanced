@@ -90,8 +90,11 @@ def log_security_event(
     try:
         request_id = _safe_str(getattr(request.state, "request_id", ""))
 
+        # tenant_id is set by AuthMiddleware only after a credential is verified.
+        # Unauthenticated / pre-auth requests have no tenant_id on state.
         raw_tid = getattr(request.state, "tenant_id", None)
-        tenant_id = raw_tid if isinstance(raw_tid, str) and raw_tid else "default"
+        tenant_id: str | None = raw_tid if isinstance(raw_tid, str) and raw_tid else None
+        tenant_status = "authenticated" if tenant_id is not None else "unauthenticated"
 
         latency_ms: float | None = None
         try:
@@ -110,6 +113,7 @@ def log_security_event(
             timestamp=datetime.now(UTC).isoformat(),
             request_id=request_id,
             tenant_id=tenant_id,
+            tenant_status=tenant_status,
             source_ip=_get_source_ip(request),
             method=_safe_str(request.method),
             route=_safe_str(request.url.path),

@@ -25,14 +25,14 @@ Complete all items before transitioning from MONITOR → ENFORCE in production.
 ## Product / Application
 
 - [ ] `SECRET_KEY` set to a strong random value (not the default)
-- [ ] `ADMIN_SECRET` set to a strong random value (not the default)
+- [ ] `ADMIN_SECRET` set to a strong random value — **app will not start without it**
 - [ ] `routing.yml` deployed with all production routes defined
 - [ ] Policy files (`auth.yml`, `payment.yml`, `admin.yml`) reviewed and deployed
 - [ ] Rate limits tuned per-route based on expected traffic
 - [ ] JSON schema enforcement enabled for endpoints that require strict input
 - [ ] YARA rules deployed and `YARA_RULES_DIR` set
 - [ ] Bot detection bypass IPs updated (`BOT_DETECTION_BYPASS_IPS`)
-- [ ] Dashboard access secured (`DASHBOARD_TOKEN` set or network-restricted)
+- [ ] `DASHBOARD_TOKEN` set to a strong random value — **app will not start without it**
 - [ ] `/healthz` returning 200
 - [ ] `/metrics` returning Prometheus data
 - [ ] MONITOR phase completed with < 1% false-positive rate

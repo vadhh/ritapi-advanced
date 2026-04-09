@@ -19,7 +19,8 @@ Required SIEM fields (always scalar, always present):
   action          — block | throttle | monitor | allow
   timestamp       — ISO 8601 UTC string
   request_id      — UUID string (empty string when unavailable)
-  tenant_id       — tenant identifier (default: "default")
+  tenant_id       — verified tenant identifier, or null for unauthenticated requests
+  tenant_status   — "authenticated" | "unauthenticated"
   source_ip       — originating client IP (XFF-first)
   method          — HTTP method
   route           — URL path (no query string)
@@ -78,7 +79,8 @@ def build_siem_event(
     status_code: int,
     timestamp: str,
     request_id: str,
-    tenant_id: str,
+    tenant_id: str | None,
+    tenant_status: str = "authenticated",
     source_ip: str,
     method: str,
     route: str,
@@ -106,6 +108,7 @@ def build_siem_event(
         "timestamp": timestamp,
         "request_id": request_id,
         "tenant_id": tenant_id,
+        "tenant_status": tenant_status,
         "source_ip": source_ip,
         "method": method,
         "route": route,

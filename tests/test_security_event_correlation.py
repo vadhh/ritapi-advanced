@@ -63,7 +63,7 @@ def _dispatch(middleware, req, policy):
 REQUIRED_FIELDS = {
     # SIEM flat fields
     "event_type", "severity", "action", "timestamp",
-    "request_id", "tenant_id", "source_ip",
+    "request_id", "tenant_id", "tenant_status", "source_ip",
     "method", "route", "reason", "trigger_type", "trigger_source", "status_code",
     # Extension fields
     "latency_ms", "detection_count", "detection_types",
@@ -78,6 +78,9 @@ def _assert_common(event: dict, request_id: str, tenant_id: str, action: str) ->
     assert event["event_type"] == "security_decision"
     assert event["request_id"] == request_id, "request_id must match"
     assert event["tenant_id"] == tenant_id, "tenant_id must match"
+    assert event["tenant_status"] in ("authenticated", "unauthenticated"), (
+        f"tenant_status must be 'authenticated' or 'unauthenticated', got {event['tenant_status']!r}"
+    )
     assert event["action"] == action
     assert isinstance(event["detections"], list)
 

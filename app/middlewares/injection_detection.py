@@ -11,7 +11,6 @@ import time as _time
 from urllib.parse import unquote
 
 from fastapi import Request
-from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.middlewares.detection_schema import append_detection, ensure_detections_container
@@ -350,9 +349,3 @@ class InjectionDetectionMiddleware(BaseHTTPMiddleware):
         requests_total.labels(method=request.method, action="block", detection_type=category).inc()
         threat_score.observe(1.0)
 
-    @staticmethod
-    def _blocked_response(category: str) -> JSONResponse:
-        return JSONResponse(
-            {"error": "Blocked by RitAPI", "detail": f"Malicious pattern detected ({category})"},
-            status_code=403,
-        )

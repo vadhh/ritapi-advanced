@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 RitAPI Advanced is a standalone FastAPI service providing layer-7 API protection: WAF (regex + YARA), rate limiting, bot detection, injection detection, exfiltration detection, JWT/API-key auth, RBAC, Prometheus metrics, and a live security dashboard.
 
-**Current stage: Stage 4 (Testing / QA), ~40% through.**
+**Current stage: Stage 4 (Testing / QA), ~85% through.**
 
 ## Stage Model
 
@@ -16,7 +16,7 @@ RitAPI Advanced is a standalone FastAPI service providing layer-7 API protection
 | 1 | Design | ✅ |
 | 2 | Development (Local) | ✅ |
 | 3 | Integration | ✅ |
-| 4 | Testing / QA | 🔶 ~40% |
+| 4 | Testing / QA | 🔶 ~85% |
 | 5 | Staging | ✗ |
 | 6 | Build & Packaging | ✗ |
 | 7 | Code Signing & Security Audit | ✗ |

@@ -133,7 +133,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                                 "Rate limit exceeded for %s %s: %d/%d (window %ds)",
                                 id_type, identity_label, current, rate_limit, rate_window,
                             )
-                            redis.setex(log_key, rate_window, "1")
                             rate_limit_hits.labels(identity_type=id_type).inc()
                             requests_total.labels(
                                 method=request.method, action="block", detection_type="rate_limit"
