@@ -214,7 +214,7 @@ class HardGateMiddleware(BaseHTTPMiddleware):
 
             from app.auth.api_key_handler import validate_api_key
             if validate_api_key(raw_key) is None:
-                logger.warning("HardGate: invalid API key from %s", ip)
+                logger.warning("HardGate: API auth rejected — invalid identity from %s", ip)
                 append_detection(
                     request,
                     detection_type="invalid_api_key",

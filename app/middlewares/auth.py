@@ -141,7 +141,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if not credential_tenant:
             get_perf(request)["auth_ms"] = round((time.monotonic() - _t_auth) * 1000, 3)
             logger.warning(
-                "Auth: rejecting unbound credential from %s on %s — no tenant claim",
+                "Auth: rejecting unbound token from %s on %s — no tenant claim in payload",
                 ip, path,
             )
             auth_failures.labels(method="tenant_unbound").inc()
