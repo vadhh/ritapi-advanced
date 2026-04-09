@@ -140,7 +140,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         if not credential_tenant:
             get_perf(request)["auth_ms"] = round((time.monotonic() - _t_auth) * 1000, 3)
-            logger.warning(
+            logger.warning(  # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
                 "Auth: rejecting unbound token from %s on %s — no tenant claim in payload",
                 ip, path,
             )
