@@ -32,12 +32,6 @@ _startup_logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # noqa: ARG001
     """Startup validation: fail fast on missing required configuration."""
-    dashboard_token = os.getenv("DASHBOARD_TOKEN")
-    if not dashboard_token:
-        raise RuntimeError(
-            "DASHBOARD_TOKEN is not set. Dashboard requires a token. "
-            "Set DASHBOARD_TOKEN in your environment or .env file."
-        )
     if not os.getenv("ADMIN_SECRET"):
         raise RuntimeError(
             "ADMIN_SECRET is not set. Required for admin bootstrap auth. "
