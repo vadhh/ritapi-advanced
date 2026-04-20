@@ -34,7 +34,7 @@ cd "$SCRIPT_DIR"
 
 [[ -f docker/demo.yml         ]] || die "docker/demo.yml not found — run from repo root"
 [[ -f docker/demo.usb.yml     ]] || die "docker/demo.usb.yml not found — run Task 2 first"
-[[ -f docker/Dockerfile       ]] || die "Dockerfile not found"
+[[ -f Dockerfile              ]] || die "Dockerfile not found"
 [[ -f .env.demo               ]] || die ".env.demo not found"
 [[ -f usb/demo.sh             ]] || die "usb/demo.sh not found — run Task 3 first"
 [[ -f usb/stop.sh             ]] || die "usb/stop.sh not found — run Task 4 first"
