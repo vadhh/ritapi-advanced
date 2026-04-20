@@ -33,6 +33,7 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
+    image: ritapi-advanced-app
     container_name: ritapi-demo-app
     env_file: ../.env.demo
     networks:
