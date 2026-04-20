@@ -1,0 +1,49 @@
+# docker/demo.usb.yml — RitAPI Advanced USB demo stack
+#
+# USB variant — uses pre-loaded images, no source build required.
+# Images must be loaded first: docker load -i images/ritapi-advanced.tar
+# Copied to USB as docker/demo.yml so demo_attack.sh and demo_clean.sh work unchanged.
+# Start via: demo.sh (USB root) — do not run directly.
+
+networks:
+  demo:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+          gateway: 172.28.0.1
+
+services:
+
+  # ── Redis ─────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: ritapi-demo-redis
+    networks:
+      - demo
+    command: redis-server --save "" --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── App ───────────────────────────────────────────────────────────────────────
+  app:
+    image: ritapi-advanced-app:demo
+    container_name: ritapi-demo-app
+    env_file: ../.env.demo
+    networks:
+      - demo
+    ports:
+      - "8001:8001"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8001/healthz"]
+      interval: 5s
+      timeout: 3s
+      start_period: 15s
+      retries: 10
+    restart: unless-stopped
