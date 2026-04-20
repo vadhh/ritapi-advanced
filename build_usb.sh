@@ -53,6 +53,7 @@ log "Building app image..."
 docker compose -f docker/demo.yml build
 
 log "Tagging app image as ${APP_IMAGE}..."
+# Source tag matches the image: field in docker/demo.yml — reliable regardless of project name.
 docker tag ritapi-advanced-app "$APP_IMAGE"
 log "  app → ${APP_IMAGE}"
 
@@ -103,7 +104,7 @@ log "Done."
 log "  Staged : ${STAGE_DIR}"
 log "  Size   : ${TOTAL_SIZE}"
 log ""
-log "Next step: copy ${STAGE_DIR}/* to the root of a formatted USB drive."
+log "Next step: copy all files (including hidden) to the root of a formatted USB drive."
 log ""
 log "  Example (Linux — replace <label> with your USB label):"
 log "    cp -r ${STAGE_DIR}/. /media/\$USER/<label>/"

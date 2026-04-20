@@ -1,3 +1,5 @@
 usb/demo.sh      text eol=lf
 usb/stop.sh      text eol=lf
 build_usb.sh     text eol=lf
+scripts/demo_attack.sh   text eol=lf
+scripts/demo_clean.sh    text eol=lf
