@@ -41,6 +41,7 @@ cd "$SCRIPT_DIR"
 [[ -f usb/README.txt          ]] || die "usb/README.txt not found — run Task 5 first"
 [[ -f scripts/demo_attack.sh  ]] || die "scripts/demo_attack.sh not found"
 [[ -f scripts/demo_clean.sh   ]] || die "scripts/demo_clean.sh not found"
+[[ -f scripts/demo_run.sh     ]] || die "scripts/demo_run.sh not found"
 
 # ── Pull redis image (needed for docker save) ─────────────────────────────────
 
@@ -89,7 +90,10 @@ cp docker/demo.usb.yml "${STAGE_DIR}/docker/demo.yml"
 mkdir -p "${STAGE_DIR}/scripts"
 cp scripts/demo_attack.sh "${STAGE_DIR}/scripts/demo_attack.sh"
 cp scripts/demo_clean.sh  "${STAGE_DIR}/scripts/demo_clean.sh"
-chmod +x "${STAGE_DIR}/scripts/demo_attack.sh" "${STAGE_DIR}/scripts/demo_clean.sh"
+cp scripts/demo_run.sh    "${STAGE_DIR}/scripts/demo_run.sh"
+chmod +x "${STAGE_DIR}/scripts/demo_attack.sh" \
+         "${STAGE_DIR}/scripts/demo_clean.sh" \
+         "${STAGE_DIR}/scripts/demo_run.sh"
 
 # Images tar
 mkdir -p "${STAGE_DIR}/images"
