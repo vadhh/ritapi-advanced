@@ -119,3 +119,21 @@ def test_list_endpoint_returns_blocked_ips(client, admin_secret_headers, redis):
         assert "10.2.2.3" in data["blocked_ips"]
     finally:
         unblock_ip("10.2.2.3")
+
+
+def test_block_endpoint_requires_auth(client):
+    """POST /admin/ip/block must return 401 without credentials."""
+    resp = client.post("/admin/ip/block", json={"ip": "10.3.3.1"})
+    assert resp.status_code == 401
+
+
+def test_unblock_endpoint_requires_auth(client):
+    """DELETE /admin/ip/block must return 401 without credentials."""
+    resp = client.request("DELETE", "/admin/ip/block", json={"ip": "10.3.3.2"})
+    assert resp.status_code == 401
+
+
+def test_list_endpoint_requires_auth(client):
+    """GET /admin/ip/block must return 401 without credentials."""
+    resp = client.get("/admin/ip/block")
+    assert resp.status_code == 401

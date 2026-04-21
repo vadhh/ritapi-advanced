@@ -17,7 +17,7 @@ import logging
 import os
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, IPvAnyAddress
 
 from app.auth.api_key_handler import issue_api_key, revoke_api_key, rotate_api_key
 from app.auth.jwt_handler import create_access_token
@@ -150,7 +150,7 @@ class RevokeTokenRequest(BaseModel):
 
 
 class BlockIPRequest(BaseModel):
-    ip: str = Field(..., description="IP address to block or unblock")
+    ip: IPvAnyAddress = Field(..., description="IPv4 or IPv6 address to block or unblock")
 
 
 # ---------------------------------------------------------------------------
@@ -249,15 +249,16 @@ async def add_ip_block(
     caller: dict = Depends(_require_admin_access),
 ):
     """Permanently block an IP via the Redis blocklist. Takes effect immediately."""
-    block_ip(body.ip)
+    ip_str = str(body.ip)
+    block_ip(ip_str)
     log_admin_event(
         action="ip_blocked",
         subject=caller.get("subject", "unknown"),
         issuer=caller.get("subject", "unknown"),
         request_id=getattr(request.state, "request_id", None),
-        metadata={"ip": body.ip},
+        metadata={"ip": ip_str},
     )
-    return {"blocked": True, "ip": body.ip}
+    return {"blocked": True, "ip": ip_str}
 
 
 @router.delete("/ip/block", summary="Remove an IP from the permanent blocklist")
@@ -267,15 +268,16 @@ async def remove_ip_block(
     caller: dict = Depends(_require_admin_access),
 ):
     """Unblock a previously blocked IP. Takes effect immediately."""
-    removed = unblock_ip(body.ip)
+    ip_str = str(body.ip)
+    removed = unblock_ip(ip_str)
     log_admin_event(
         action="ip_unblocked",
         subject=caller.get("subject", "unknown"),
         issuer=caller.get("subject", "unknown"),
         request_id=getattr(request.state, "request_id", None),
-        metadata={"ip": body.ip, "was_present": removed},
+        metadata={"ip": ip_str, "was_present": removed},
     )
-    return {"unblocked": True, "ip": body.ip, "was_present": removed}
+    return {"unblocked": True, "ip": ip_str, "was_present": removed}
 
 
 @router.get("/ip/block", summary="List all permanently blocked IPs")
