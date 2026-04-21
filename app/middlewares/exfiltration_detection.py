@@ -186,6 +186,12 @@ class ExfiltrationDetectionMiddleware(BaseHTTPMiddleware):
         _t_exfil_post = _time.monotonic()
         redis = RedisClientSingleton.get_client()
         if redis is None:
+            if is_fail_closed() and not any(path.startswith(p) for p in _SKIP_PREFIXES):
+                logger.warning("Exfil detection (post): Redis unavailable in fail-closed mode — returning 503")
+                return JSONResponse(
+                    {"detail": "Service temporarily unavailable — exfiltration detection requires Redis"},
+                    status_code=503,
+                )
             get_perf(request)["exfil_ms"] = round(_t_exfil_pre_elapsed, 3)
             return response
 

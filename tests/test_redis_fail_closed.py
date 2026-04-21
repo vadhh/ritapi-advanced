@@ -38,16 +38,22 @@ def test_is_fail_closed_rejects_unknown_values():
 @pytest.fixture
 def no_redis():
     """Patch RedisClientSingleton.get_client to return None."""
+    from app.utils.redis_client import RedisClientSingleton
+    RedisClientSingleton.reset()
     with patch("app.utils.redis_client.RedisClientSingleton.get_client", return_value=None):
         yield
+    RedisClientSingleton.reset()
 
 
 @pytest.fixture
 def no_redis_closed():
     """Patch Redis unavailable AND fail-mode to closed."""
+    from app.utils.redis_client import RedisClientSingleton
+    RedisClientSingleton.reset()
     with patch("app.utils.redis_client.RedisClientSingleton.get_client", return_value=None), \
          patch("app.utils.redis_client._FAIL_MODE", "closed"):
         yield
+    RedisClientSingleton.reset()
 
 
 def test_rate_limit_returns_503_when_fail_closed(client, no_redis_closed):
