@@ -192,7 +192,11 @@ async def issue_token(
 
 
 @router.post("/token/revoke", summary="Revoke a JWT before it expires")
-async def revoke_token(body: RevokeTokenRequest, request: Request):
+async def revoke_token(
+    body: RevokeTokenRequest,
+    request: Request,
+    caller: dict = Depends(_require_admin_access),
+):
     """
     Revoke a JWT by its jti claim.
 

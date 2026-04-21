@@ -113,10 +113,9 @@ def test_revoke_endpoint_returns_400_for_invalid_token(client, admin_secret_head
 
 def test_revoke_endpoint_returns_400_for_token_without_jti(client, admin_secret_headers):
     """/admin/token/revoke must return 400 when the token has no jti claim."""
-    import os
     from datetime import UTC, datetime, timedelta
     from jose import jwt as jose_jwt
-    secret = os.getenv("SECRET_KEY", "test-secret-key-32-bytes-minimum!!")
+    from app.auth.jwt_handler import SECRET_KEY as secret
     token = jose_jwt.encode(
         {"sub": "legacy", "role": "VIEWER", "tid": "default", "exp": datetime.now(UTC) + timedelta(minutes=60)},
         secret,
