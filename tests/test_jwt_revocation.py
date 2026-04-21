@@ -74,3 +74,57 @@ def test_verify_token_still_works_for_non_revoked_token(redis):
     from app.auth.jwt_handler import create_access_token, verify_token
     token = create_access_token("carol", "VIEWER", "acme")
     assert verify_token(token) is not None
+
+
+# ── POST /admin/token/revoke endpoint ─────────────────────────────────────
+
+def test_revoke_endpoint_returns_200_with_revoked_true(client, admin_secret_headers, redis):
+    """/admin/token/revoke must return {revoked: true} for a valid token."""
+    from app.auth.jwt_handler import create_access_token
+    token = create_access_token("dave", "VIEWER", "default")
+    resp = client.post(
+        "/admin/token/revoke",
+        json={"token": token},
+        headers=admin_secret_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data.get("revoked") is True
+
+
+def test_revoke_endpoint_makes_token_invalid(client, admin_secret_headers, redis):
+    """/admin/token/revoke must cause verify_token to return None."""
+    from app.auth.jwt_handler import create_access_token, verify_token
+    token = create_access_token("eve", "VIEWER", "default")
+    assert verify_token(token) is not None, "Token should be valid before revocation"
+    client.post("/admin/token/revoke", json={"token": token}, headers=admin_secret_headers)
+    assert verify_token(token) is None, "Token should be invalid after revocation"
+
+
+def test_revoke_endpoint_returns_400_for_invalid_token(client, admin_secret_headers):
+    """/admin/token/revoke must return 400 for a token that cannot be decoded."""
+    resp = client.post(
+        "/admin/token/revoke",
+        json={"token": "not.a.jwt"},
+        headers=admin_secret_headers,
+    )
+    assert resp.status_code == 400
+
+
+def test_revoke_endpoint_returns_400_for_token_without_jti(client, admin_secret_headers):
+    """/admin/token/revoke must return 400 when the token has no jti claim."""
+    import os
+    from datetime import UTC, datetime, timedelta
+    from jose import jwt as jose_jwt
+    secret = os.getenv("SECRET_KEY", "test-secret-key-32-bytes-minimum!!")
+    token = jose_jwt.encode(
+        {"sub": "legacy", "role": "VIEWER", "tid": "default", "exp": datetime.now(UTC) + timedelta(minutes=60)},
+        secret,
+        algorithm="HS256",
+    )
+    resp = client.post(
+        "/admin/token/revoke",
+        json={"token": token},
+        headers=admin_secret_headers,
+    )
+    assert resp.status_code == 400

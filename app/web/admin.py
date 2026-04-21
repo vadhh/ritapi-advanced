@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from app.auth.api_key_handler import issue_api_key, revoke_api_key, rotate_api_key
 from app.auth.jwt_handler import create_access_token
+from app.utils.jwt_denylist import add_to_denylist
 from app.policies.service import get_all_policies, reload_policies
 from app.rbac.rbac_service import UserRole, require_role
 from app.routing.service import get_all_routes, reload_routes
@@ -143,6 +144,10 @@ class ApiKeyRevokeRequest(BaseModel):
     api_key: str = Field(..., min_length=1)
 
 
+class RevokeTokenRequest(BaseModel):
+    token: str = Field(..., description="The JWT to revoke")
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -184,6 +189,48 @@ async def issue_token(
         subject=body.subject,
         role=role.name,
     )
+
+
+@router.post("/token/revoke", summary="Revoke a JWT before it expires")
+async def revoke_token(body: RevokeTokenRequest, request: Request):
+    """
+    Revoke a JWT by its jti claim.
+
+    Decodes without re-validating the signature — revocation is an admin action.
+    Stores jti in Redis denylist with TTL = remaining token lifetime.
+    Returns 400 if the token cannot be decoded or has no jti claim.
+    """
+    import math
+    import time as _time
+    from jose import JWTError
+    from jose import jwt as jose_jwt
+    from app.auth.jwt_handler import SECRET_KEY, ALGORITHM
+
+    try:
+        payload = jose_jwt.decode(
+            body.token,
+            SECRET_KEY,
+            algorithms=[ALGORITHM],
+            options={"verify_exp": False},
+        )
+    except JWTError as exc:
+        raise HTTPException(status_code=400, detail=f"Cannot decode token: {exc}")
+
+    jti = payload.get("jti")
+    if not jti:
+        raise HTTPException(status_code=400, detail="Token has no jti claim — cannot revoke")
+
+    exp = payload.get("exp", 0)
+    remaining = max(1, math.ceil(exp - _time.time()))
+    add_to_denylist(jti, ttl=remaining)
+
+    log_admin_event(
+        action="jwt_revoked",
+        subject=payload.get("sub", "unknown"),
+        issuer="admin_revoke",
+        metadata={"jti": jti, "ttl": remaining},
+    )
+    return {"revoked": True, "jti": jti, "ttl_seconds": remaining}
 
 
 @router.post("/apikey", response_model=ApiKeyResponse, summary="Issue an API key")
