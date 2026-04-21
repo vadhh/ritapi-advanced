@@ -41,13 +41,15 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
     import asyncio
     from app.utils.reload_broadcaster import reload_listener_task
 
-    _reload_task = asyncio.create_task(reload_listener_task())
+    app.state.reload_task = asyncio.create_task(reload_listener_task())
+    _startup_logger.info("reload_listener: background task started (pid=%d)", os.getpid())
     try:
         yield
     finally:
-        _reload_task.cancel()
+        _startup_logger.info("reload_listener: cancelling background task")
+        app.state.reload_task.cancel()
         try:
-            await _reload_task
+            await app.state.reload_task
         except asyncio.CancelledError:
             pass
 

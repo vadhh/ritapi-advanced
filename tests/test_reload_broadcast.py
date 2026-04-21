@@ -12,6 +12,24 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+async def _wait_for_subscriber(redis_client, channel: str, timeout: float = 3.0) -> None:
+    """Poll until at least one subscriber is registered on `channel`, or timeout.
+
+    Must be awaited inside an async context so the event loop can let the
+    listener task establish its subscription between polls.
+    """
+    import asyncio as _asyncio
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        result = redis_client.execute_command("PUBSUB", "NUMSUB", channel)
+        # result is [channel_bytes, count] or [channel_str, count]
+        count = result[1] if len(result) >= 2 else 0
+        if count >= 1:
+            return
+        await _asyncio.sleep(0.05)
+    raise TimeoutError(f"No subscriber on {channel!r} after {timeout}s")
+
+
 # ── broadcast_reload() ─────────────────────────────────────────────────────
 
 def test_broadcast_reload_returns_subscriber_count(redis):
@@ -83,7 +101,7 @@ def test_listener_reloads_on_message_from_other_pid(redis):
 
     async def run():
         task = asyncio.create_task(reload_listener_task())
-        await asyncio.sleep(0.2)  # let subscription settle
+        await _wait_for_subscriber(redis, RELOAD_CHANNEL)
 
         # Publish from a fake PID (not our own)
         other_pid = os.getpid() + 9999
@@ -121,7 +139,7 @@ def test_listener_skips_self_published_message(redis):
 
     async def run():
         task = asyncio.create_task(reload_listener_task())
-        await asyncio.sleep(0.2)
+        await _wait_for_subscriber(redis, RELOAD_CHANNEL)
 
         # Publish with OUR OWN pid — should be ignored
         payload = json.dumps({"pid": os.getpid()})
