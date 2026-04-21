@@ -21,6 +21,8 @@ Tuning:
   REDIS_CONNECT_TIMEOUT   socket connect timeout in seconds (default: 2)
   REDIS_SOCKET_TIMEOUT    socket read/write timeout in seconds (default: 2)
   REDIS_RECONNECT_COOLDOWN seconds to wait between reconnect attempts (default: 5)
+  REDIS_FAIL_MODE         "open" (default) or "closed"; read once at startup —
+                          requires process restart to take effect
 """
 import logging
 import os

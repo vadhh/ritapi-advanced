@@ -27,6 +27,8 @@ from app.utils.tenant_key import tenant_scoped_key
 
 logger = logging.getLogger(__name__)
 
+_SKIP_PREFIXES = ("/healthz", "/metrics", "/docs", "/openapi")
+
 # IPs exempt from bot detection (monitoring systems, internal probes).
 # Comma-separated; set via BOT_DETECTION_BYPASS_IPS env var.
 _BYPASS_IPS: frozenset[str] = frozenset(
@@ -218,7 +220,7 @@ class BotDetectionMiddleware(BaseHTTPMiddleware):
 
         redis = RedisClientSingleton.get_client()
         if redis is None:
-            if is_fail_closed():
+            if is_fail_closed() and not any(path.startswith(p) for p in _SKIP_PREFIXES):
                 logger.warning("Bot detection: Redis unavailable in fail-closed mode — returning 503")
                 return JSONResponse(
                     {"detail": "Service temporarily unavailable — bot detection requires Redis"},
