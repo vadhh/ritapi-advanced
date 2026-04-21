@@ -40,6 +40,20 @@ _CONNECT_TIMEOUT  = float(os.getenv("REDIS_CONNECT_TIMEOUT", "2"))
 _SOCKET_TIMEOUT   = float(os.getenv("REDIS_SOCKET_TIMEOUT",  "2"))
 _COOLDOWN_SECONDS = float(os.getenv("REDIS_RECONNECT_COOLDOWN", "5"))
 
+# Fail-mode: "open" (default) = skip checks when Redis unavailable;
+#            "closed" = return 503 when Redis unavailable.
+_FAIL_MODE: str = os.getenv("REDIS_FAIL_MODE", "open").lower()
+
+
+def is_fail_closed() -> bool:
+    """Return True when REDIS_FAIL_MODE=closed is set.
+
+    Middlewares call this when get_client() returns None to decide whether to
+    pass the request through (open/default) or reject with 503 (closed).
+    """
+    return _FAIL_MODE.lower() == "closed"
+
+
 # Per-operation retry: 3 attempts, exponential backoff capped at 1s
 _RETRY = Retry(ExponentialBackoff(cap=1.0, base=0.1), retries=3)
 _RETRY_ERRORS = [RedisConnectionError, RedisTimeoutError]
