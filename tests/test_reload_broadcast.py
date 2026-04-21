@@ -62,3 +62,80 @@ def test_broadcast_reload_returns_zero_on_redis_error():
     with patch("app.utils.reload_broadcaster.RedisClientSingleton.get_client", return_value=mock_redis):
         result = broadcast_reload()
     assert result == 0
+
+
+# ── reload_listener_task() ─────────────────────────────────────────────────
+
+def test_listener_reloads_on_message_from_other_pid(redis):
+    """Listener calls reload_routes/reload_policies when it receives a message from another PID."""
+    import asyncio
+    from unittest.mock import patch
+
+    from app.utils.reload_broadcaster import RELOAD_CHANNEL, reload_listener_task
+
+    reloaded = {"routes": False, "policies": False}
+
+    def fake_reload_routes():
+        reloaded["routes"] = True
+
+    def fake_reload_policies():
+        reloaded["policies"] = True
+
+    async def run():
+        task = asyncio.create_task(reload_listener_task())
+        await asyncio.sleep(0.2)  # let subscription settle
+
+        # Publish from a fake PID (not our own)
+        other_pid = os.getpid() + 9999
+        payload = json.dumps({"pid": other_pid})
+        redis.publish(RELOAD_CHANNEL, payload)
+        await asyncio.sleep(0.3)  # let listener process
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    with patch("app.routing.service.reload_routes", fake_reload_routes), \
+         patch("app.policies.service.reload_policies", fake_reload_policies):
+        asyncio.run(run())
+
+    assert reloaded["routes"], "reload_routes was not called"
+    assert reloaded["policies"], "reload_policies was not called"
+
+
+def test_listener_skips_self_published_message(redis):
+    """Listener does NOT call reload when the message PID matches our own."""
+    import asyncio
+    from unittest.mock import patch
+
+    from app.utils.reload_broadcaster import RELOAD_CHANNEL, reload_listener_task
+
+    reloaded = {"routes": False, "policies": False}
+
+    def fake_reload_routes():
+        reloaded["routes"] = True
+
+    def fake_reload_policies():
+        reloaded["policies"] = True
+
+    async def run():
+        task = asyncio.create_task(reload_listener_task())
+        await asyncio.sleep(0.2)
+
+        # Publish with OUR OWN pid — should be ignored
+        payload = json.dumps({"pid": os.getpid()})
+        redis.publish(RELOAD_CHANNEL, payload)
+        await asyncio.sleep(0.3)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    with patch("app.routing.service.reload_routes", fake_reload_routes), \
+         patch("app.policies.service.reload_policies", fake_reload_policies):
+        asyncio.run(run())
+
+    assert not reloaded["routes"], "reload_routes should NOT have been called for self-message"
+    assert not reloaded["policies"], "reload_policies should NOT have been called for self-message"

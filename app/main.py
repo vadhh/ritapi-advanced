@@ -31,13 +31,25 @@ _startup_logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # noqa: ARG001
-    """Startup validation: fail fast on missing required configuration."""
+    """Startup: validate required config and start cross-worker reload listener."""
     if not os.getenv("ADMIN_SECRET"):
         raise RuntimeError(
             "ADMIN_SECRET is not set. Required for admin bootstrap auth. "
             "Set ADMIN_SECRET in your environment or .env file."
         )
-    yield
+
+    import asyncio
+    from app.utils.reload_broadcaster import reload_listener_task
+
+    _reload_task = asyncio.create_task(reload_listener_task())
+    try:
+        yield
+    finally:
+        _reload_task.cancel()
+        try:
+            await _reload_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title="RitAPI Advanced", version="0.1.0", lifespan=lifespan)
