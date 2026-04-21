@@ -74,3 +74,48 @@ def test_hard_gate_passes_unknown_ip(client, redis):
     """HardGate must not block an IP that was never added."""
     resp = client.get("/healthz", headers={"X-Forwarded-For": "10.1.1.3", "User-Agent": UA})
     assert resp.status_code == 200
+
+
+# ── Admin endpoint tests ───────────────────────────────────────────────────
+
+def test_block_endpoint_returns_200(client, admin_secret_headers, redis):
+    """POST /admin/ip/block must return 200 and block the IP."""
+    from app.utils.ip_blocklist import is_blocked, unblock_ip
+    resp = client.post(
+        "/admin/ip/block",
+        json={"ip": "10.2.2.1"},
+        headers=admin_secret_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json().get("blocked") is True
+    assert is_blocked("10.2.2.1") is True
+    unblock_ip("10.2.2.1")
+
+
+def test_unblock_endpoint_returns_200(client, admin_secret_headers, redis):
+    """DELETE /admin/ip/block must return 200 and unblock the IP."""
+    from app.utils.ip_blocklist import block_ip, is_blocked
+    block_ip("10.2.2.2")
+    resp = client.request(
+        "DELETE",
+        "/admin/ip/block",
+        json={"ip": "10.2.2.2"},
+        headers=admin_secret_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json().get("unblocked") is True
+    assert is_blocked("10.2.2.2") is False
+
+
+def test_list_endpoint_returns_blocked_ips(client, admin_secret_headers, redis):
+    """GET /admin/ip/block must return the current blocklist."""
+    from app.utils.ip_blocklist import block_ip, unblock_ip
+    block_ip("10.2.2.3")
+    try:
+        resp = client.get("/admin/ip/block", headers=admin_secret_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "blocked_ips" in data
+        assert "10.2.2.3" in data["blocked_ips"]
+    finally:
+        unblock_ip("10.2.2.3")

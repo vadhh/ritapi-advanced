@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from app.auth.api_key_handler import issue_api_key, revoke_api_key, rotate_api_key
 from app.auth.jwt_handler import create_access_token
+from app.utils.ip_blocklist import block_ip, get_blocked_ips, unblock_ip
 from app.utils.jwt_denylist import add_to_denylist
 from app.policies.service import get_all_policies, reload_policies
 from app.rbac.rbac_service import UserRole, require_role
@@ -148,6 +149,10 @@ class RevokeTokenRequest(BaseModel):
     token: str = Field(..., description="The JWT to revoke")
 
 
+class BlockIPRequest(BaseModel):
+    ip: str = Field(..., description="IP address to block or unblock")
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -235,6 +240,52 @@ async def revoke_token(
         metadata={"jti": jti, "ttl": remaining},
     )
     return {"revoked": True, "jti": jti, "ttl_seconds": remaining}
+
+
+@router.post("/ip/block", summary="Add an IP to the permanent blocklist")
+async def add_ip_block(
+    body: BlockIPRequest,
+    request: Request,
+    caller: dict = Depends(_require_admin_access),
+):
+    """Permanently block an IP via the Redis blocklist. Takes effect immediately."""
+    block_ip(body.ip)
+    log_admin_event(
+        action="ip_blocked",
+        subject=caller.get("subject", "unknown"),
+        issuer=caller.get("subject", "unknown"),
+        request_id=getattr(request.state, "request_id", None),
+        metadata={"ip": body.ip},
+    )
+    return {"blocked": True, "ip": body.ip}
+
+
+@router.delete("/ip/block", summary="Remove an IP from the permanent blocklist")
+async def remove_ip_block(
+    body: BlockIPRequest,
+    request: Request,
+    caller: dict = Depends(_require_admin_access),
+):
+    """Unblock a previously blocked IP. Takes effect immediately."""
+    removed = unblock_ip(body.ip)
+    log_admin_event(
+        action="ip_unblocked",
+        subject=caller.get("subject", "unknown"),
+        issuer=caller.get("subject", "unknown"),
+        request_id=getattr(request.state, "request_id", None),
+        metadata={"ip": body.ip, "was_present": removed},
+    )
+    return {"unblocked": True, "ip": body.ip, "was_present": removed}
+
+
+@router.get("/ip/block", summary="List all permanently blocked IPs")
+async def list_ip_blocks(
+    request: Request,
+    caller: dict = Depends(_require_admin_access),
+):
+    """Return the full Redis permanent IP blocklist."""
+    ips = get_blocked_ips()
+    return {"blocked_ips": sorted(ips), "count": len(ips)}
 
 
 @router.post("/apikey", response_model=ApiKeyResponse, summary="Issue an API key")
