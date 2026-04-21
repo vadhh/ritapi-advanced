@@ -51,7 +51,7 @@ def is_fail_closed() -> bool:
     Middlewares call this when get_client() returns None to decide whether to
     pass the request through (open/default) or reject with 503 (closed).
     """
-    return _FAIL_MODE.lower() == "closed"
+    return _FAIL_MODE == "closed"
 
 
 # Per-operation retry: 3 attempts, exponential backoff capped at 1s
