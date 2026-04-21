@@ -46,13 +46,13 @@ async def reload_listener_task() -> None:
     Runs for the lifetime of the worker. Reconnects automatically on Redis errors.
     Skips messages published by this same process (self-message guard via PID).
     """
-    from app.policies.service import reload_policies
-    from app.routing.service import reload_routes
-
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/1")
     my_pid = os.getpid()
 
     while True:
+        from app.policies.service import reload_policies
+        from app.routing.service import reload_routes
+
         try:
             async with aioredis.from_url(redis_url, decode_responses=True) as r:
                 async with r.pubsub() as ps:
