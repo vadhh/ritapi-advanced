@@ -157,3 +157,40 @@ def test_listener_skips_self_published_message(redis):
 
     assert not reloaded["routes"], "reload_routes should NOT have been called for self-message"
     assert not reloaded["policies"], "reload_policies should NOT have been called for self-message"
+
+
+# ── /admin/reload endpoint ─────────────────────────────────────────────────
+
+def test_reload_endpoint_returns_workers_notified(client, admin_secret_headers):
+    """/admin/reload response must include a 'workers_notified' integer field."""
+    resp = client.post("/admin/reload", headers=admin_secret_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "workers_notified" in data, "Missing 'workers_notified' in reload response"
+    assert isinstance(data["workers_notified"], int)
+
+
+def test_reload_endpoint_publishes_to_channel(client, admin_secret_headers, redis):
+    """/admin/reload must publish a reload signal to the pub/sub channel."""
+    from app.utils.reload_broadcaster import RELOAD_CHANNEL
+
+    ps = redis.pubsub()
+    ps.subscribe(RELOAD_CHANNEL)
+    time.sleep(0.05)
+
+    try:
+        client.post("/admin/reload", headers=admin_secret_headers)
+
+        deadline = time.monotonic() + 2
+        msg = None
+        while time.monotonic() < deadline:
+            msg = ps.get_message(ignore_subscribe_messages=True, timeout=0.1)
+            if msg and msg["type"] == "message":
+                break
+
+        assert msg is not None, "/admin/reload did not publish to the reload channel"
+        data = json.loads(msg["data"])
+        assert "pid" in data
+    finally:
+        ps.unsubscribe(RELOAD_CHANNEL)
+        ps.close()

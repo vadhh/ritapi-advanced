@@ -298,18 +298,28 @@ async def reload_config(
     caller: dict = Depends(_require_super_admin_access),
 ):
     """
-    Force-reload routing.yml and all policy YAML files. Clears all caches.
+    Force-reload routing.yml and all policy YAML files on this worker, then
+    broadcast a reload signal to all other workers via Redis pub/sub.
     Requires SUPER_ADMIN or a valid ADMIN_SECRET header.
     """
     reload_routes()
     reload_policies()
     routes = get_all_routes()
     policies = get_all_policies()
+
+    from app.utils.reload_broadcaster import broadcast_reload
+    workers_notified = broadcast_reload()
+
     log_admin_event(
         action="config_reloaded",
         subject=caller.get("subject", "unknown"),
         issuer=caller.get("subject", "unknown"),
         request_id=getattr(request.state, "request_id", None),
-        metadata={"routes": len(routes), "policies": len(policies)},
+        metadata={"routes": len(routes), "policies": len(policies), "workers_notified": workers_notified},
     )
-    return {"reloaded": True, "routes": len(routes), "policies": len(policies)}
+    return {
+        "reloaded": True,
+        "routes": len(routes),
+        "policies": len(policies),
+        "workers_notified": workers_notified,
+    }
