@@ -4,6 +4,7 @@ Task 1 covers: broadcast_reload() — happy path, Redis-unavailable, Redis-error
 Task 2 adds: reload_listener_task() behaviour — reacts to other-PID message, skips own-PID.
 Task 3 adds: /admin/reload endpoint — workers_notified field, publishes to channel.
 """
+import asyncio
 import json
 import os
 import time
@@ -12,22 +13,30 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-async def _wait_for_subscriber(redis_client, channel: str, timeout: float = 3.0) -> None:
-    """Poll until at least one subscriber is registered on `channel`, or timeout.
+async def _wait_for_subscriber(
+    redis_client, channel: str, timeout: float = 3.0, min_count: int = 1
+) -> None:
+    """Poll until at least `min_count` subscribers are registered on `channel`, or timeout.
 
     Must be awaited inside an async context so the event loop can let the
     listener task establish its subscription between polls.
+
+    Pass ``min_count=existing_count + 1`` when other subscribers (e.g. the
+    app-lifespan reload task) may already be registered so we don't return
+    before the *test's own* listener task has subscribed.
     """
     import asyncio as _asyncio
+    # Yield once before the first poll so newly-created tasks get a chance to start.
+    await _asyncio.sleep(0)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         result = redis_client.execute_command("PUBSUB", "NUMSUB", channel)
         # result is [channel_bytes, count] or [channel_str, count]
         count = result[1] if len(result) >= 2 else 0
-        if count >= 1:
+        if count >= min_count:
             return
         await _asyncio.sleep(0.05)
-    raise TimeoutError(f"No subscriber on {channel!r} after {timeout}s")
+    raise TimeoutError(f"Fewer than {min_count} subscriber(s) on {channel!r} after {timeout}s")
 
 
 # ── broadcast_reload() ─────────────────────────────────────────────────────
@@ -84,11 +93,9 @@ def test_broadcast_reload_returns_zero_on_redis_error():
 
 # ── reload_listener_task() ─────────────────────────────────────────────────
 
-def test_listener_reloads_on_message_from_other_pid(redis):
+@pytest.mark.anyio
+async def test_listener_reloads_on_message_from_other_pid(redis):
     """Listener calls reload_routes/reload_policies when it receives a message from another PID."""
-    import asyncio
-    from unittest.mock import patch
-
     from app.utils.reload_broadcaster import RELOAD_CHANNEL, reload_listener_task
 
     reloaded = {"routes": False, "policies": False}
@@ -99,9 +106,17 @@ def test_listener_reloads_on_message_from_other_pid(redis):
     def fake_reload_policies():
         reloaded["policies"] = True
 
-    async def run():
+    # Snapshot existing subscriber count before creating our task.
+    # The app-lifespan reload listener may already be subscribed (session-scoped
+    # TestClient starts the app once for the whole test run).  We must wait for
+    # count to rise by 1 so we know *our* task has subscribed before publishing.
+    result = redis.execute_command("PUBSUB", "NUMSUB", RELOAD_CHANNEL)
+    existing = result[1] if len(result) >= 2 else 0
+
+    with patch("app.routing.service.reload_routes", fake_reload_routes), \
+         patch("app.policies.service.reload_policies", fake_reload_policies):
         task = asyncio.create_task(reload_listener_task())
-        await _wait_for_subscriber(redis, RELOAD_CHANNEL)
+        await _wait_for_subscriber(redis, RELOAD_CHANNEL, min_count=existing + 1)
 
         # Publish from a fake PID (not our own)
         other_pid = os.getpid() + 9999
@@ -114,19 +129,13 @@ def test_listener_reloads_on_message_from_other_pid(redis):
         except asyncio.CancelledError:
             pass
 
-    with patch("app.routing.service.reload_routes", fake_reload_routes), \
-         patch("app.policies.service.reload_policies", fake_reload_policies):
-        asyncio.run(run())
-
     assert reloaded["routes"], "reload_routes was not called"
     assert reloaded["policies"], "reload_policies was not called"
 
 
-def test_listener_skips_self_published_message(redis):
+@pytest.mark.anyio
+async def test_listener_skips_self_published_message(redis):
     """Listener does NOT call reload when the message PID matches our own."""
-    import asyncio
-    from unittest.mock import patch
-
     from app.utils.reload_broadcaster import RELOAD_CHANNEL, reload_listener_task
 
     reloaded = {"routes": False, "policies": False}
@@ -137,9 +146,15 @@ def test_listener_skips_self_published_message(redis):
     def fake_reload_policies():
         reloaded["policies"] = True
 
-    async def run():
+    # Same as above: snapshot existing subscriber count so we wait for our task's
+    # subscription specifically, not just any pre-existing lifespan subscriber.
+    result = redis.execute_command("PUBSUB", "NUMSUB", RELOAD_CHANNEL)
+    existing = result[1] if len(result) >= 2 else 0
+
+    with patch("app.routing.service.reload_routes", fake_reload_routes), \
+         patch("app.policies.service.reload_policies", fake_reload_policies):
         task = asyncio.create_task(reload_listener_task())
-        await _wait_for_subscriber(redis, RELOAD_CHANNEL)
+        await _wait_for_subscriber(redis, RELOAD_CHANNEL, min_count=existing + 1)
 
         # Publish with OUR OWN pid — should be ignored
         payload = json.dumps({"pid": os.getpid()})
@@ -150,10 +165,6 @@ def test_listener_skips_self_published_message(redis):
             await task
         except asyncio.CancelledError:
             pass
-
-    with patch("app.routing.service.reload_routes", fake_reload_routes), \
-         patch("app.policies.service.reload_policies", fake_reload_policies):
-        asyncio.run(run())
 
     assert not reloaded["routes"], "reload_routes should NOT have been called for self-message"
     assert not reloaded["policies"], "reload_policies should NOT have been called for self-message"
