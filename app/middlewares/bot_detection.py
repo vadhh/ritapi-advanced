@@ -18,7 +18,11 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.middlewares.detection_schema import append_detection
 from app.utils.metrics import bot_blocks, bot_signals, requests_total, threat_score
 from app.utils.perf import add_redis_ms, get_perf
-from app.utils.redis_client import RedisClientSingleton
+from redis.exceptions import TimeoutError as RedisTimeoutError
+
+from starlette.responses import JSONResponse
+
+from app.utils.redis_client import RedisClientSingleton, is_fail_closed
 from app.utils.tenant_key import tenant_scoped_key
 
 logger = logging.getLogger(__name__)
@@ -179,6 +183,9 @@ def _detect(redis, ip: str, method: str, path: str, ua: str,
             # Reset consecutive-error streak on success
             redis.delete(f"{pfx}:consec:{ip}")
 
+    except RedisTimeoutError as e:
+        logger.warning("Bot detection Redis timeout — failing open: %s", e)
+        RedisClientSingleton.mark_failed()
     except Exception as e:
         logger.error("Bot detection Redis error: %s", e)
         RedisClientSingleton.mark_failed()
@@ -211,6 +218,12 @@ class BotDetectionMiddleware(BaseHTTPMiddleware):
 
         redis = RedisClientSingleton.get_client()
         if redis is None:
+            if is_fail_closed():
+                logger.warning("Bot detection: Redis unavailable in fail-closed mode — returning 503")
+                return JSONResponse(
+                    {"detail": "Service temporarily unavailable — bot detection requires Redis"},
+                    status_code=503,
+                )
             return await call_next(request)
 
         raw_tid = getattr(request.state, "tenant_id", None)

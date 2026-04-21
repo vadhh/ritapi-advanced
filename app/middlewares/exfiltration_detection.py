@@ -27,10 +27,16 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.middlewares.detection_schema import append_detection
 from app.utils.metrics import exfiltration_alerts, requests_total, response_size_bytes
 from app.utils.perf import add_redis_ms, get_perf
-from app.utils.redis_client import RedisClientSingleton
+from redis.exceptions import TimeoutError as RedisTimeoutError
+
+from starlette.responses import JSONResponse
+
+from app.utils.redis_client import RedisClientSingleton, is_fail_closed
 from app.utils.tenant_key import tenant_scoped_key
 
 logger = logging.getLogger(__name__)
+
+_SKIP_PREFIXES = ("/healthz", "/metrics", "/docs", "/openapi")
 
 # ---------------------------------------------------------------------------
 # Thresholds
@@ -95,6 +101,12 @@ class ExfiltrationDetectionMiddleware(BaseHTTPMiddleware):
         # --- Pre-request block for counter-based detections ---
         _t_exfil_pre = _time.monotonic()
         redis_pre = RedisClientSingleton.get_client()
+        if redis_pre is None and is_fail_closed() and not any(path.startswith(p) for p in _SKIP_PREFIXES):
+            logger.warning("Exfil detection: Redis unavailable in fail-closed mode — returning 503")
+            return JSONResponse(
+                {"detail": "Service temporarily unavailable — exfiltration detection requires Redis"},
+                status_code=503,
+            )
         if redis_pre is not None:
             try:
                 # Combine both pre-check reads into a single pipeline round-trip.
@@ -201,6 +213,13 @@ class ExfiltrationDetectionMiddleware(BaseHTTPMiddleware):
                 alerts.append(("sequential_crawl", "block"))
             add_redis_ms(request, (_time.monotonic() - _t_r) * 1000)
 
+        except RedisTimeoutError as e:
+            logger.warning("Exfiltration detection Redis timeout — failing open: %s", e)
+            RedisClientSingleton.mark_failed()
+            get_perf(request)["exfil_ms"] = round(
+                _t_exfil_pre_elapsed + (_time.monotonic() - _t_exfil_post) * 1000, 3
+            )
+            return response
         except Exception as e:
             logger.error("Exfiltration detection Redis error: %s", e)
             RedisClientSingleton.mark_failed()

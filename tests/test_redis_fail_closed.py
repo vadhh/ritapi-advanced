@@ -66,3 +66,43 @@ def test_rate_limit_skip_paths_bypass_fail_closed(client, no_redis_closed):
     """/healthz is a skip path — must never 503 even in fail-closed mode."""
     resp = client.get("/healthz", headers={"User-Agent": UA})
     assert resp.status_code == 200
+
+
+# ── BotDetectionMiddleware ─────────────────────────────────────────────────
+
+def test_bot_detection_returns_503_when_fail_closed(client, no_redis_closed):
+    """Bot detection must return 503 when Redis is down and REDIS_FAIL_MODE=closed."""
+    resp = client.get(
+        "/api/resource",
+        headers={"X-Forwarded-For": "10.99.99.1", "User-Agent": UA},
+    )
+    assert resp.status_code == 503
+
+
+def test_bot_detection_passes_through_when_fail_open(client, no_redis):
+    """Bot detection must not 503 in default fail-open mode."""
+    resp = client.get(
+        "/healthz",
+        headers={"X-Forwarded-For": "10.99.99.2", "User-Agent": UA},
+    )
+    assert resp.status_code == 200
+
+
+# ── ExfiltrationDetectionMiddleware ───────────────────────────────────────
+
+def test_exfiltration_returns_503_when_fail_closed(client, no_redis_closed):
+    """Exfiltration detection must return 503 when Redis is down and REDIS_FAIL_MODE=closed."""
+    resp = client.get(
+        "/api/resource",
+        headers={"X-Forwarded-For": "10.99.99.3", "User-Agent": UA},
+    )
+    assert resp.status_code == 503
+
+
+def test_exfiltration_passes_through_when_fail_open(client, no_redis):
+    """Exfiltration detection must not 503 in default fail-open mode."""
+    resp = client.get(
+        "/healthz",
+        headers={"X-Forwarded-For": "10.99.99.4", "User-Agent": UA},
+    )
+    assert resp.status_code == 200
