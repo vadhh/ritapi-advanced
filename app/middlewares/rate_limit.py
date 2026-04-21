@@ -21,7 +21,9 @@ from app.middlewares.detection_schema import append_detection, ensure_detections
 from app.policies.service import DEFAULT_POLICY, get_policy
 from app.utils.metrics import rate_limit_hits, requests_total, threat_score
 from app.utils.perf import add_redis_ms
-from app.utils.redis_client import RedisClientSingleton
+from redis.exceptions import TimeoutError as RedisTimeoutError
+
+from app.utils.redis_client import RedisClientSingleton, is_fail_closed
 from app.utils.tenant_key import tenant_scoped_key
 
 logger = logging.getLogger(__name__)
@@ -87,6 +89,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         redis = RedisClientSingleton.get_client()
 
+        if redis is None and is_fail_closed():
+            from starlette.responses import JSONResponse
+            logger.warning("Rate limiter: Redis unavailable in fail-closed mode — returning 503")
+            return JSONResponse(
+                {"detail": "Service temporarily unavailable — rate limiting requires Redis"},
+                status_code=503,
+            )
+
         if redis and (client_ip or api_key):
             path_key = path.split("?")[0].replace("/", "_")
             throttle_key = (
@@ -129,7 +139,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                         # SET NX EX: atomic log-dedup — True only on first breach per window
                         was_first = redis.set(log_key, "1", ex=rate_window, nx=True)
                         if was_first:
-                            identity_label = client_ip if id_type == "ip" else f"key:{api_key[:8]}…"
+                            # nosemgrep: python-logger-credential-disclosure — logs hash prefix, not the raw key
+                            identity_label = client_ip if id_type == "ip" else f"key:sha256:{hashlib.sha256(api_key.encode()).hexdigest()[:8]}…"
                             logger.warning(
                                 "Rate limit exceeded for %s %s: %d/%d (window %ds)",
                                 id_type, identity_label, current, rate_limit, rate_window,
@@ -140,7 +151,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                             ).inc()
                             threat_score.observe(0.9)
 
-                        identity_label = client_ip if id_type == "ip" else f"key:{api_key[:8]}…"
+                        identity_label = client_ip if id_type == "ip" else f"key:sha256:{hashlib.sha256(api_key.encode()).hexdigest()[:8]}…"
                         append_detection(
                             request,
                             detection_type="rate_limit",
@@ -151,6 +162,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                             metadata={"identity_type": id_type, "path": path},
                         )
                         return await call_next(request)
+                except RedisTimeoutError as e:
+                    logger.warning("Rate limiter Redis timeout — failing open: %s", e)
+                    RedisClientSingleton.mark_failed()
                 except Exception as e:
                     logger.error("Rate limiter Redis error: %s", e)
                     RedisClientSingleton.mark_failed()
