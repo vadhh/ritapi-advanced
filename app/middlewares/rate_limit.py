@@ -16,6 +16,7 @@ import time
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
 
 from app.middlewares.detection_schema import append_detection, ensure_detections_container
 from app.policies.service import DEFAULT_POLICY, get_policy
@@ -90,7 +91,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         redis = RedisClientSingleton.get_client()
 
         if redis is None and is_fail_closed():
-            from starlette.responses import JSONResponse
             logger.warning("Rate limiter: Redis unavailable in fail-closed mode — returning 503")
             return JSONResponse(
                 {"detail": "Service temporarily unavailable — rate limiting requires Redis"},

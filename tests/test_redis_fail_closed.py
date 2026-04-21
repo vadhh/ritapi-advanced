@@ -36,14 +36,14 @@ def test_is_fail_closed_rejects_unknown_values():
 # ── RateLimitMiddleware ────────────────────────────────────────────────────
 
 @pytest.fixture
-def no_redis(redis):
+def no_redis():
     """Patch RedisClientSingleton.get_client to return None."""
     with patch("app.utils.redis_client.RedisClientSingleton.get_client", return_value=None):
         yield
 
 
 @pytest.fixture
-def no_redis_closed(redis):
+def no_redis_closed():
     """Patch Redis unavailable AND fail-mode to closed."""
     with patch("app.utils.redis_client.RedisClientSingleton.get_client", return_value=None), \
          patch("app.utils.redis_client._FAIL_MODE", "closed"):
@@ -57,9 +57,9 @@ def test_rate_limit_returns_503_when_fail_closed(client, no_redis_closed):
 
 
 def test_rate_limit_still_passes_through_when_fail_open(client, no_redis):
-    """Rate limiter must NOT return 503 in default fail-open mode."""
+    """Rate limiter must pass through to next middleware (401 from auth) in default fail-open mode."""
     resp = client.get("/dashboard", headers={"User-Agent": UA})
-    assert resp.status_code != 503
+    assert resp.status_code == 401
 
 
 def test_rate_limit_skip_paths_bypass_fail_closed(client, no_redis_closed):
