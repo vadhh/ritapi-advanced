@@ -13,10 +13,13 @@ Changes:
 """
 import logging
 import os
+import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, Request, status
 from jose import JWTError, jwt
+
+from app.utils.jwt_denylist import is_revoked
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +52,7 @@ def create_access_token(
         Encoded JWT string.
     """
     expire = datetime.now(UTC) + timedelta(minutes=EXPIRE_MINUTES)
-    payload = {"sub": subject, "role": role, "tid": tenant_id, "exp": expire}
+    payload = {"sub": subject, "role": role, "tid": tenant_id, "exp": expire, "jti": str(uuid.uuid4())}
     if extra:
         payload.update(extra)
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
@@ -59,13 +62,19 @@ def verify_token(token: str) -> dict | None:
     """
     Decode and validate a JWT.
 
-    Returns the payload dict on success, or None if the token is invalid/expired.
+    Returns the payload dict on success, or None if the token is invalid/expired
+    or its jti has been revoked.
     """
     try:
-        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError as e:
         logger.debug("JWT verification failed: %s", e)
         return None
+    jti = payload.get("jti")
+    if jti and is_revoked(jti):
+        logger.warning("JWT rejected: jti=%s is in revocation denylist", jti)
+        return None
+    return payload
 
 
 def get_token_from_request(request: Request) -> str | None:

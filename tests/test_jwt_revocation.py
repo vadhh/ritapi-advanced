@@ -39,3 +39,38 @@ def test_add_to_denylist_noops_when_redis_unavailable():
     RedisClientSingleton.reset()
     with patch("app.utils.redis_client.RedisClientSingleton.get_client", return_value=None):
         add_to_denylist(str(uuid.uuid4()), ttl=60)  # must not raise
+
+
+# ── verify_token + denylist integration ───────────────────────────────────
+
+def test_issued_token_has_jti_claim(redis):
+    """create_access_token must embed a jti claim."""
+    import os
+    from jose import jwt as jose_jwt
+    from app.auth.jwt_handler import create_access_token
+    token = create_access_token("alice", "VIEWER", "acme")
+    payload = jose_jwt.decode(
+        token,
+        os.getenv("SECRET_KEY", "test-secret-key-32-bytes-minimum!!"),
+        algorithms=["HS256"],
+    )
+    assert "jti" in payload
+    assert len(payload["jti"]) == 36  # UUID4 string
+
+
+def test_verify_token_returns_none_for_revoked_jti(redis):
+    """verify_token must return None when the token's jti is in the denylist."""
+    from app.auth.jwt_handler import create_access_token, verify_token
+    from app.utils.jwt_denylist import add_to_denylist
+    token = create_access_token("bob", "VIEWER", "acme")
+    payload = verify_token(token)
+    assert payload is not None, "Token should be valid before revocation"
+    add_to_denylist(payload["jti"], ttl=300)
+    assert verify_token(token) is None, "Token should be rejected after revocation"
+
+
+def test_verify_token_still_works_for_non_revoked_token(redis):
+    """verify_token must return payload for a valid, non-revoked token."""
+    from app.auth.jwt_handler import create_access_token, verify_token
+    token = create_access_token("carol", "VIEWER", "acme")
+    assert verify_token(token) is not None
