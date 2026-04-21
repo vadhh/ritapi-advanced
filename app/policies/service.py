@@ -63,6 +63,7 @@ class DecisionActions:
     on_yara: str = "block"
     on_ddos_spike: str = "block"
     on_invalid_api_key: str = "block"
+    on_ip_blocklist: str = "block"
 
     def get_action(self, detection_type: str) -> str:
         """Return the action for a detection type.

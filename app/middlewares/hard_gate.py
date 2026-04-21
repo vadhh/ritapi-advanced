@@ -18,8 +18,8 @@ import os
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
-
 from app.middlewares.detection_schema import append_detection, ensure_detections_container
+from app.utils.ip_blocklist import is_blocked as _is_ip_blocked
 from app.utils.redis_client import RedisClientSingleton
 from app.utils.tenant_key import tenant_scoped_key
 
@@ -77,6 +77,20 @@ class HardGateMiddleware(BaseHTTPMiddleware):
                 detection_type="blocked_ip",
                 score=1.0,
                 reason=f"IP {ip} is blocked",
+                status_code=403,
+                source="hard_gate",
+                metadata={"ip": ip},
+            )
+
+        if _is_ip_blocked(ip):
+            logger.warning(
+                "HardGate: Redis-blocked IP %s on %s %s", ip, request.method, request.url.path
+            )
+            append_detection(
+                request,
+                detection_type="ip_blocklist",
+                score=1.0,
+                reason=f"IP {ip} is in Redis permanent blocklist",
                 status_code=403,
                 source="hard_gate",
                 metadata={"ip": ip},

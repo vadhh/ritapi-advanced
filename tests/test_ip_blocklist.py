@@ -41,3 +41,36 @@ def test_is_blocked_fails_open_when_redis_unavailable():
     RedisClientSingleton.reset()
     with patch("app.utils.redis_client.RedisClientSingleton.get_client", return_value=None):
         assert is_blocked("10.0.0.99") is False
+
+
+# ── HardGateMiddleware integration ─────────────────────────────────────────
+
+UA = "pytest-test-client/1.0"
+
+
+def test_hard_gate_blocks_ip_in_redis_blocklist(client, redis):
+    """HardGate must return 403 for an IP in the Redis blocklist."""
+    from app.utils.ip_blocklist import block_ip, unblock_ip
+    ip = "10.1.1.1"
+    block_ip(ip)
+    try:
+        resp = client.get("/healthz", headers={"X-Forwarded-For": ip, "User-Agent": UA})
+        assert resp.status_code == 403
+    finally:
+        unblock_ip(ip)
+
+
+def test_hard_gate_allows_ip_after_unblock(client, redis):
+    """HardGate must allow an IP that was unblocked."""
+    from app.utils.ip_blocklist import block_ip, unblock_ip
+    ip = "10.1.1.2"
+    block_ip(ip)
+    unblock_ip(ip)
+    resp = client.get("/healthz", headers={"X-Forwarded-For": ip, "User-Agent": UA})
+    assert resp.status_code == 200
+
+
+def test_hard_gate_passes_unknown_ip(client, redis):
+    """HardGate must not block an IP that was never added."""
+    resp = client.get("/healthz", headers={"X-Forwarded-For": "10.1.1.3", "User-Agent": UA})
+    assert resp.status_code == 200
