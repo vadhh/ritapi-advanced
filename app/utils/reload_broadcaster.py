@@ -45,6 +45,11 @@ async def reload_listener_task() -> None:
 
     Runs for the lifetime of the worker. Reconnects automatically on Redis errors.
     Skips messages published by this same process (self-message guard via PID).
+
+    Note: uses a standalone async connection via REDIS_URL. Redis Sentinel (REDIS_SENTINEL_HOSTS)
+    is not supported on this connection — the listener will bypass Sentinel in HA deployments.
+    Note: concurrent reload calls (burst of messages) are serialised by the async loop;
+    reload_routes/reload_policies are idempotent so back-to-back calls are safe.
     """
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/1")
     my_pid = os.getpid()
@@ -67,6 +72,7 @@ async def reload_listener_task() -> None:
                             data = json.loads(message["data"])
                             sender_pid = data.get("pid")
                         except Exception:
+                            logger.warning("reload_listener: malformed message, reloading anyway")
                             sender_pid = None
 
                         if sender_pid == my_pid:

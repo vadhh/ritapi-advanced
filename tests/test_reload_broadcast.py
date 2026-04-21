@@ -1,4 +1,9 @@
-"""Tests for L-1: multi-worker config reload via Redis pub/sub."""
+"""Tests for L-1: multi-worker config reload via Redis pub/sub.
+
+Task 1 covers: broadcast_reload() — happy path, Redis-unavailable, Redis-error.
+Task 2 adds: reload_listener_task() behaviour — reacts to other-PID message, skips own-PID.
+Task 3 adds: /admin/reload endpoint — workers_notified field, publishes to channel.
+"""
 import json
 import os
 import time
@@ -29,12 +34,14 @@ def test_broadcast_reload_returns_subscriber_count(redis):
         msg = ps.get_message(ignore_subscribe_messages=True, timeout=0.1)
         if msg and msg["type"] == "message":
             break
-    assert msg is not None, "No message received on channel"
-    data = json.loads(msg["data"])
-    assert "pid" in data
-    assert data["pid"] == os.getpid()
-    ps.unsubscribe(RELOAD_CHANNEL)
-    ps.close()
+    try:
+        assert msg is not None, "No message received on channel"
+        data = json.loads(msg["data"])
+        assert "pid" in data
+        assert data["pid"] == os.getpid()
+    finally:
+        ps.unsubscribe(RELOAD_CHANNEL)
+        ps.close()
 
 
 def test_broadcast_reload_returns_zero_when_redis_unavailable():
