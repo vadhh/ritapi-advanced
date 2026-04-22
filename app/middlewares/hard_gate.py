@@ -82,7 +82,7 @@ class HardGateMiddleware(BaseHTTPMiddleware):
                 metadata={"ip": ip},
             )
 
-        if _is_ip_blocked(ip):
+        elif _is_ip_blocked(ip):
             logger.warning(
                 "HardGate: Redis-blocked IP %s on %s %s", ip, request.method, request.url.path
             )

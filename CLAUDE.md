@@ -114,6 +114,8 @@ Bootstrap: pass `X-Admin-Secret` header (= `ADMIN_SECRET` env var) or a SUPER_AD
 | `REDIS_RECONNECT_COOLDOWN` | Seconds between reconnect attempts | `5` |
 | `RATE_LIMIT_REQUESTS` | Requests per window | `100` |
 | `RATE_LIMIT_WINDOW` | Window in seconds | `60` |
+| `THROTTLE_MAX_HITS` | Throttle-flagged requests before hard 429 | `5` |
+| `THROTTLE_WINDOW_SECONDS` | Throttle counter window in seconds | `60` |
 | `LOG_PATH` | JSONL log output path | `/var/log/ritapi_advanced.jsonl` |
 | `YARA_RULES_DIR` | Directory of `.yar` rule files | *(unset = YARA disabled)* |
 | `BOT_DETECTION_BYPASS_IPS` | Comma-separated IPs exempt from bot scoring | `127.0.0.1,::1` |

@@ -18,6 +18,8 @@ from datetime import UTC, datetime
 
 from fastapi import HTTPException, Request, status
 
+from redis.exceptions import TimeoutError as RedisTimeoutError
+
 from app.utils.redis_client import RedisClientSingleton
 
 logger = logging.getLogger(__name__)
@@ -124,6 +126,11 @@ def validate_api_key(raw_key: str) -> dict | None:
     except (json.JSONDecodeError, ValueError):
         # nosemgrep: python-logger-credential-disclosure — logs hash prefix only
         logger.error("Corrupt API key metadata for hash %s", _hash(raw_key)[:12])
+        return None
+    except RedisTimeoutError as exc:
+        # nosemgrep: python-logger-credential-disclosure — logs exception, not the key
+        logger.warning("Redis timeout reading API key — failing open: %s", exc)
+        RedisClientSingleton.mark_failed()
         return None
     except Exception as exc:
         # nosemgrep: python-logger-credential-disclosure — logs exception, not the key

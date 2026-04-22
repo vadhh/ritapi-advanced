@@ -143,6 +143,7 @@ def _parse_policy_data(name: str, data: dict) -> Policy:
             on_yara=actions_data.get("on_yara", "block"),
             on_ddos_spike=actions_data.get("on_ddos_spike", "block"),
             on_invalid_api_key=actions_data.get("on_invalid_api_key", "block"),
+            on_ip_blocklist=actions_data.get("on_ip_blocklist", "block"),
         ),
     )
 

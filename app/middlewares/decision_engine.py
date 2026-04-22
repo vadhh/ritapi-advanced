@@ -42,8 +42,36 @@ logger = logging.getLogger(__name__)
 # Throttle: maximum number of throttle-flagged requests before escalating to 429.
 # Each additional throttle detection increments a per-IP Redis counter; once
 # count > THROTTLE_MAX_HITS the request is blocked with 429 (not just slowed).
-THROTTLE_MAX_HITS: int = int(os.getenv("THROTTLE_MAX_HITS", "5"))
-THROTTLE_WINDOW: int = int(os.getenv("THROTTLE_WINDOW_SECONDS", "60"))
+#
+# Env vars:
+#   THROTTLE_MAX_HITS        — positive int, default 5
+#   THROTTLE_WINDOW_SECONDS  — positive int (seconds), default 60
+def _load_throttle_config() -> tuple[int, int]:
+    _hits_raw = os.getenv("THROTTLE_MAX_HITS", "5")
+    _win_raw  = os.getenv("THROTTLE_WINDOW_SECONDS", "60")
+    try:
+        hits = int(_hits_raw)
+        if hits <= 0:
+            raise ValueError("must be positive")
+    except ValueError:
+        logger.warning(
+            "Invalid THROTTLE_MAX_HITS=%r — must be a positive integer; using default 5",
+            _hits_raw,
+        )
+        hits = 5
+    try:
+        window = int(_win_raw)
+        if window <= 0:
+            raise ValueError("must be positive")
+    except ValueError:
+        logger.warning(
+            "Invalid THROTTLE_WINDOW_SECONDS=%r — must be a positive integer; using default 60",
+            _win_raw,
+        )
+        window = 60
+    return hits, window
+
+THROTTLE_MAX_HITS, THROTTLE_WINDOW = _load_throttle_config()
 
 
 class DecisionEngineMiddleware(BaseHTTPMiddleware):
